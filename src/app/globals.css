@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/*
+ * AX Document Platform — PCN 브랜드 팔레트.
+ * 베이스 화이트, 블랙 텍스트, 딥레드 강조색 (PCN "pcn" 워드마크 레드).
+ */
+@theme {
+  --color-canvas: #ffffff;
+  --color-surface: #f6f6f7;
+  --color-surface-2: #efeff1;
+  --color-border: #e5e5e8;
+  --color-ink: #191919;
+  --color-ink-muted: #6b6b73;
+
+  --color-primary: #b01c2e;
+  --color-primary-hover: #8f1626;
+  --color-primary-soft: #fbeaec;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /*
+   * 모서리 반경 스케일 — 컴포넌트마다 임의로 정하지 않고 전역에 일관 적용:
+   *   panel   — 카드, 모달, 배너 등 콘텐츠를 담는 모든 면
+   *   control — 버튼, 인풋, 내비 행, 아이콘 타일 등 클릭 가능한 요소
+   *   chips   — 배지, 태그, 아바타는 고정 반경 대신 `rounded-full` 사용
+   */
+  --radius-panel: 0.75rem;
+  --radius-control: 0.5rem;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 밝은 UI에 맞는 얇고 무채색인 스크롤바. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+
+/*
+ * 폴링되는 화면의 숫자는 reflow되면 안 된다. 대시보드가 15초마다 카운터를
+ * 갱신하는데 비례폭 숫자는 렌더마다 너비가 바뀌므로 등폭 숫자로 고정한다.
+ */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * reduced-motion 설정을 전역에서 존중한다. Tailwind의 `animate-pulse`(스켈레톤)와
+ * 모든 `transition-*` 유틸리티는 개별적으로 끌 수 없으므로 OS 설정이 일괄 차단한다.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
