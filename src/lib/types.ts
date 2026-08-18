@@ -114,7 +114,10 @@ export type Section = {
 
 /* --- AI 모듈 --- */
 /* 오타 검증 (백엔드 app/schemas/proofread.py 반영) */
+export type FindingStatus = "pending" | "accepted" | "rejected";
+
 export type ProofreadFinding = {
+  id: string; // 이 분석 안에서 고정 (위치 기반: f0, f1, f2...)
   original: string;
   suggestion: string;
   reason: string;
@@ -122,6 +125,18 @@ export type ProofreadFinding = {
   section_id: number | null;
   page_start: number | null;
   page_end: number | null;
+  status: FindingStatus;
+};
+
+/** POST .../apply 응답 — 승인된 finding을 원본 파일에 반영해 만든 새 버전 정보. */
+export type ApplyAnalysisResult = {
+  analysis_id: number;
+  document_id: number;
+  new_version_id: number;
+  new_version_no: number;
+  applied_count: number;
+  skipped_count: number;
+  skipped_reasons: string[];
 };
 
 export type ProofreadResult = {
@@ -135,6 +150,9 @@ export type ProofreadResult = {
   sections_scanned: number;
   error: string | null;
   created_at: string;
+  /** 이 분석으로 교정을 적용해 만든 버전 — null이면 아직 미적용. 새로고침 후에도 적용 버튼을 숨기는 데 쓴다. */
+  applied_version_id: number | null;
+  applied_at: string | null;
 };
 
 export type AnalysisSummary = {

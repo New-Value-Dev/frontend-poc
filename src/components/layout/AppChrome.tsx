@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -20,6 +20,7 @@ export function AppChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading } = useAuth();
+  const [navOpen, setNavOpen] = useState(false);
 
   const bare = BARE_PREFIXES.some((p) => pathname.startsWith(p));
   const needsAuth = AUTH_ENABLED && !bare;
@@ -29,6 +30,12 @@ export function AppChrome({ children }: { children: ReactNode }) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
   }, [needsAuth, loading, user, pathname, router]);
+
+  // 페이지 이동 시 모바일 사이드바 드로어를 자동으로 닫는다.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNavOpen(false);
+  }, [pathname]);
 
   if (bare) return <>{children}</>;
 
@@ -43,10 +50,12 @@ export function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
-        <main className="flex-1 overflow-y-auto bg-surface px-8 py-7">{children}</main>
+        <Topbar onMenuClick={() => setNavOpen(true)} />
+        <main className="flex-1 overflow-y-auto bg-surface px-4 py-5 sm:px-8 sm:py-7">
+          {children}
+        </main>
       </div>
     </div>
   );

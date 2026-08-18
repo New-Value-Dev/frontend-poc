@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { getDocument, downloadDocument } from "@/lib/documents";
+import { getDocument, downloadDocument, fetchDocumentBlob } from "@/lib/documents";
 import { getProject } from "@/lib/projects";
 import { listVersions, getSections } from "@/lib/versions";
 import { errorMessage, isAuthError } from "@/lib/api";
@@ -14,12 +14,26 @@ import {
   BackLink,
   FOCUS_RING,
 } from "@/components/ui/primitives";
+import { Modal } from "@/components/ui/Modal";
 import { AiPanel } from "./AiPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 const POLL_STOP = ["READY", "FAILED", "CHUNKED"];
 const EMPTY = "-";
 const HL_ID = "proofread-highlight";
+
+type PreviewKind = "pdf" | "image" | "text";
+
+/** 브라우저가 직접 렌더링할 수 있는 형식만 미리보기 대상으로 삼는다 (docx/hwpx 등은 제외). */
+function previewKindOf(version: DocumentVersion | null): PreviewKind | null {
+  if (!version) return null;
+  const mime = version.mime_type ?? "";
+  const ext = version.original_file_name.split(".").pop()?.toLowerCase() ?? "";
+  if (mime === "application/pdf" || ext === "pdf") return "pdf";
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("text/") || ext === "txt" || ext === "md") return "text";
+  return null;
+}
 
 function markFirst(body: string, text: string | null) {
   if (!text) return body;
@@ -61,6 +75,11 @@ export function DocumentDetail({ docId }: { docId: string }) {
   const [highlight, setHighlight] = useState<{ sectionId: number; text: string | null } | null>(
     null,
   );
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewText, setPreviewText] = useState<string | null>(null);
 
   async function load(silent = false) {
     if (!silent) {
@@ -161,6 +180,41 @@ export function DocumentDetail({ docId }: { docId: string }) {
     }
   }
 
+  const previewKind = previewKindOf(version);
+
+  // object URL이 바뀌거나 언마운트될 때 해제.
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  async function openPreview() {
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const blob = await fetchDocumentBlob(docId);
+      if (previewKind === "text") {
+        setPreviewText(await blob.text());
+      } else {
+        setPreviewUrl(URL.createObjectURL(blob));
+      }
+    } catch (e) {
+      setPreviewError(errorMessage(e, "미리보기를 불러오지 못했습니다."));
+      setNeedLogin(isAuthError(e));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function closePreview() {
+    setPreviewOpen(false);
+    setPreviewUrl(null);
+    setPreviewText(null);
+    setPreviewError(null);
+  }
+
   if (loading) {
     return <DetailSkeleton />;
   }
@@ -177,7 +231,7 @@ export function DocumentDetail({ docId }: { docId: string }) {
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-7xl flex-col gap-4">
+    <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-full">
       {/* 헤더 */}
       <div className="flex flex-col gap-3">
         <BackLink href={`/projects/${doc.project_id}`}>
@@ -191,6 +245,11 @@ export function DocumentDetail({ docId }: { docId: string }) {
           <StatusBadge status={status} />
           <span className="font-mono text-xs text-ink-muted">#{doc.id}</span>
           <div className="ml-auto flex gap-2">
+            {previewKind && (
+              <Button variant="outline" onClick={openPreview} disabled={previewLoading}>
+                {previewLoading ? "불러오는 중…" : "원본 보기"}
+              </Button>
+            )}
             <Button variant="outline" onClick={onDownload} disabled={downloading}>
               {downloading ? "다운로드 중…" : "다운로드"}
             </Button>
@@ -203,8 +262,8 @@ export function DocumentDetail({ docId }: { docId: string }) {
 
       {error && <ErrorBanner message={error} needLogin={needLogin} />}
 
-      {/* 3분할: 아웃라인 · 뷰어 · AI 패널 */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[200px_1fr_380px]">
+      {/* 3분할: 아웃라인 · 뷰어 · AI 패널 — lg 미만에서는 각자 스크롤 대신 페이지 전체가 스크롤된다 */}
+      <div className="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[200px_1fr_380px]">
         {/* 상단은 메타데이터(항상 표시) · 아래는 스크롤되는 아웃라인 */}
         <div className="hidden min-h-0 flex-col gap-4 lg:flex">
           <div className="shrink-0 rounded-panel border border-border bg-canvas p-4">
@@ -261,8 +320,8 @@ export function DocumentDetail({ docId }: { docId: string }) {
           </div>
         </div>
 
-        {/* 뷰어 */}
-        <div className="min-h-0 overflow-y-auto rounded-panel border border-border bg-canvas p-8">
+        {/* 뷰어 — lg 미만에서는 페이지 전체가 무한정 길어지지 않도록 자체 높이 상한 + 스크롤을 둔다 */}
+        <div className="max-h-[65vh] overflow-y-auto rounded-panel border border-border bg-canvas p-4 sm:p-8 lg:max-h-none lg:min-h-0">
           {ordered.length === 0 ? (
             <div className="grid h-full place-items-center py-16 text-center">
               <div>
@@ -319,11 +378,42 @@ export function DocumentDetail({ docId }: { docId: string }) {
           )}
         </div>
 
-        {/* AI 패널 — 오타 검증만 연동됨, 나머지 모듈은 placeholder */}
-        <div className="min-h-0 overflow-hidden rounded-panel border border-border bg-canvas">
-          <AiPanel docId={docId} status={status} onFocusSection={focusSection} />
+        {/* AI 패널 — 오타 검증만 연동됨, 나머지 모듈은 placeholder. lg 미만에서도 자체 스크롤이 되도록 높이를 고정한다 */}
+        <div className="h-[65vh] overflow-hidden rounded-panel border border-border bg-canvas lg:h-auto lg:min-h-0">
+          <AiPanel
+            docId={docId}
+            status={status}
+            fileExt={version?.original_file_name.split(".").pop()?.toLowerCase() ?? null}
+            onFocusSection={focusSection}
+            onApplied={() => load(true)}
+          />
         </div>
       </div>
+
+      <Modal open={previewOpen} onClose={closePreview} title="원본 보기" className="max-w-3xl">
+        {previewError ? (
+          <ErrorBanner message={previewError} needLogin={needLogin} />
+        ) : previewLoading ? (
+          <p className="py-10 text-center text-sm text-ink-muted">불러오는 중…</p>
+        ) : previewKind === "pdf" && previewUrl ? (
+          <iframe
+            src={previewUrl}
+            title={doc.name}
+            className="h-[70vh] w-full rounded-lg border border-border"
+          />
+        ) : previewKind === "image" && previewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={previewUrl}
+            alt={doc.name}
+            className="max-h-[70vh] w-full rounded-lg object-contain"
+          />
+        ) : previewKind === "text" && previewText != null ? (
+          <pre className="max-h-[70vh] overflow-auto rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed text-ink whitespace-pre-wrap">
+            {previewText}
+          </pre>
+        ) : null}
+      </Modal>
     </div>
   );
 }

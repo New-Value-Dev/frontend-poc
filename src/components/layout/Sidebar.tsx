@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { FOCUS_RING } from "@/components/ui/primitives";
 
 type NavItem = {
@@ -34,39 +34,79 @@ const adminNav: NavItem[] = [
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
 
+  // 모바일 드로어가 열려 있는 동안 Esc로 닫고, 배경 스크롤을 막는다.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-canvas">
-      {/* 브랜드 */}
-      <Link
-        href="/"
-        className={`mx-3 mt-3 mb-2 flex items-center gap-2.5 rounded-control px-2 py-2.5 ${FOCUS_RING}`}
+    <>
+      {/* 모바일 전용 배경 오버레이 — lg 이상에서는 사이드바가 상시 노출되므로 불필요 */}
+      {open && (
+        <button
+          type="button"
+          aria-hidden
+          tabIndex={-1}
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-black/30 lg:hidden"
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 -translate-x-full flex-col border-r border-border bg-canvas transition-transform duration-200 lg:static lg:z-auto lg:w-60 lg:translate-x-0 ${
+          open ? "translate-x-0" : ""
+        }`}
       >
-        <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-control bg-white">
-          <Image src="/pcn-logo.png" alt="PCN" width={32} height={32} className="h-full w-full object-contain" />
-        </span>
-        <span className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold text-ink">사이드프로젝트</span>
-          <span className="text-xs text-ink-muted">NV개발</span>
-        </span>
-      </Link>
+        <div className="flex items-center justify-between px-3 pt-3">
+          {/* 브랜드 */}
+          <Link
+            href="/"
+            className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-control px-2 py-2.5 ${FOCUS_RING}`}
+          >
+            <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-control bg-white">
+              <Image src="/pcn-logo.png" alt="PCN" width={32} height={32} className="h-full w-full object-contain" />
+            </span>
+            <span className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold text-ink">사이드프로젝트</span>
+              <span className="text-xs text-ink-muted">NV개발</span>
+            </span>
+          </Link>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="메뉴 닫기"
+            className={`grid h-9 w-9 shrink-0 place-items-center rounded-control text-ink-muted hover:bg-surface lg:hidden ${FOCUS_RING}`}
+          >
+            <IconClose />
+          </button>
+        </div>
 
-      <nav className="flex flex-1 flex-col gap-1 px-3">
-        {nav.map((item) => (
-          <NavLink key={item.href} item={item} active={isActive(item, pathname)} />
-        ))}
+        <nav className="flex flex-1 flex-col gap-1 px-3 pb-2">
+          {nav.map((item) => (
+            <NavLink key={item.href} item={item} active={isActive(item, pathname)} />
+          ))}
 
-        <p className="px-3 pt-6 pb-2 text-xs font-semibold text-ink-muted">관리자</p>
-        {adminNav.map((item) => (
-          <NavLink key={item.href} item={item} active={isActive(item, pathname)} />
-        ))}
-      </nav>
+          <p className="px-3 pt-6 pb-2 text-xs font-semibold text-ink-muted">관리자</p>
+          {adminNav.map((item) => (
+            <NavLink key={item.href} item={item} active={isActive(item, pathname)} />
+          ))}
+        </nav>
 
-      {/* 대시보드/프로젝트/문서가 API에 연동되며 `Phase 0 skeleton` 표기는 더 이상 맞지 않아 제거함. */}
-      <div className="border-t border-border px-5 py-4 text-xs text-ink-muted">v0.1</div>
-    </aside>
+        <div className="border-t border-border px-5 py-4 text-xs text-ink-muted">v0.1</div>
+      </aside>
+    </>
   );
 }
 
@@ -120,6 +160,13 @@ function IconBeaker() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3" />
+    </svg>
+  );
+}
+function IconClose() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M6 6l12 12M18 6 6 18" />
     </svg>
   );
 }

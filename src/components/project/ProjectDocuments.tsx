@@ -240,7 +240,7 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
         ) : (
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[640px] whitespace-nowrap text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-ink-muted">
                     <th className="px-5 py-3 font-medium">문서명</th>

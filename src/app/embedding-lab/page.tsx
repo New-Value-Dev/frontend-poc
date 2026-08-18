@@ -39,7 +39,8 @@ export default function EmbeddingLabPage() {
           <CardTitle>Embedding Models</CardTitle>
           <span className="text-xs text-ink-muted">dimension 1024 · 동일 조건 비교</span>
         </CardHeader>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] whitespace-nowrap text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-ink-muted">
               <th className="px-5 py-3 font-medium">Model</th>
@@ -75,6 +76,7 @@ export default function EmbeddingLabPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
 
       {/* 종합 점수 + 선정 결과 */}

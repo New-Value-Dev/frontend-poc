@@ -48,17 +48,25 @@ export function deleteDocument(docId: string) {
 }
 
 /**
- * 원본 파일 다운로드. 엔드포인트가 Bearer 헤더를 요구하므로 단순 `<a href>`는
- * 401이 난다 — 인증을 담아 blob으로 받은 뒤 저장을 트리거한다.
+ * 원본 파일을 blob으로 받는다. 엔드포인트가 Bearer 헤더를 요구하므로 단순
+ * `<a href>`/`<iframe src>`는 401이 난다 — 인증을 담아 직접 fetch해야 한다.
+ * 다운로드와 미리보기가 공유하는 기반 함수.
  */
-export async function downloadDocument(docId: string, filename?: string) {
+export async function fetchDocumentBlob(docId: string): Promise<Blob> {
   const token = getAccessToken();
   const res = await fetch(`${BASE_URL}/documents/${docId}/download`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include",
+    // 다운로드 URL이 버전이 바뀌어도 동일해서, 브라우저 캐시에 기대면 적용 직후 재다운로드해도
+    // 옛 버전이 나올 수 있다. 서버가 Cache-Control: no-store를 보내지만 프론트에서도 명시해 둔다.
+    cache: "no-store",
   });
-  if (!res.ok) throw new ApiError(res.status, "다운로드에 실패했습니다.");
-  const blob = await res.blob();
+  if (!res.ok) throw new ApiError(res.status, "파일을 불러오지 못했습니다.");
+  return res.blob();
+}
+
+export async function downloadDocument(docId: string, filename?: string) {
+  const blob = await fetchDocumentBlob(docId);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
