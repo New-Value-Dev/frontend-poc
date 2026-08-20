@@ -270,7 +270,7 @@ function ProofreadPanel({
                 </span>
               ))}
               <span className="ml-auto text-ink-muted">
-                {result.provider === "openai" ? "GPT" : "규칙기반"} · 섹션 {result.sections_scanned}개
+                {result.provider?.startsWith("openai") ? "GPT" : "규칙기반"} · 섹션 {result.sections_scanned}개
               </span>
             </div>
 

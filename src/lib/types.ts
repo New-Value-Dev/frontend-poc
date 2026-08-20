@@ -186,19 +186,29 @@ export type ValidationIssue = {
 
 export type RelatedDocument = { documentId: string; name: string; score: number };
 
-/* --- RAG --- */
-export type Citation = {
-  documentId: string;
-  sectionId: string;
-  pageStart?: number;
-  pageEnd?: number;
+/* --- RAG (백엔드 app/schemas/rag.py 반영, snake_case) --- */
+export type CitationRead = {
+  document_id: number;
+  document_name: string;
+  section_id: number | null;
+  chunk_id: number;
+  page_start: number | null;
+  page_end: number | null;
   score: number;
-  name: string;
 };
 
-export type RagAnswer = { answer: string; citations: Citation[] };
+export type RagAnswer = {
+  id: number;
+  question: string;
+  answer: string;
+  citations: CitationRead[];
+  provider: string | null;
+  created_at: string;
+};
 
-export type RagScope = { projectIds?: string[]; folderIds?: string[] };
+export type RagScope = { project_ids?: number[]; folder_ids?: number[] };
+
+export type RagHistoryItem = { id: number; question: string; created_at: string };
 
 /* --- Embedding Lab --- */
 export type EmbeddingModel = {
