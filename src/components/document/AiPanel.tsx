@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { proofread, listAnalyses, getAnalysis, setFindingStatus, applyAnalysis } from "@/lib/ai";
+import { listVersions } from "@/lib/versions";
 import { ApiError, errorMessage } from "@/lib/api";
-import type { ApplyAnalysisResult, FindingStatus, ProofreadResult } from "@/lib/types";
-import { Button, FOCUS_RING } from "@/components/ui/primitives";
+import type { ApplyAnalysisResult, DocumentVersion, FindingStatus, ProofreadResult } from "@/lib/types";
+import { Button, FOCUS_RING, StatusBadge } from "@/components/ui/primitives";
+import { DiffModal } from "@/components/document/DiffModal";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -79,7 +81,7 @@ export function AiPanel({
           />
         )}
         {active === "validation" && <Placeholder title="규정 검증" desc="관련 RULE 문서를 검색해 GPT로 위반·주의 사항을 검증합니다. (준비 중)" />}
-        {active === "compare" && <Placeholder title="문서 비교" desc="다른 버전과 섹션을 매칭해 변경 사항을 요약합니다. (준비 중)" />}
+        {active === "compare" && <ComparePanel docId={docId} />}
         {active === "related" && <Placeholder title="관련 문서" desc="문서 임베딩 기반 유사도로 연관 문서를 추천합니다. (준비 중)" />}
       </div>
     </div>
@@ -389,6 +391,95 @@ function ProofreadPanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ComparePanel({ docId }: { docId: string }) {
+  const [versions, setVersions] = useState<DocumentVersion[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [diffOpen, setDiffOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    listVersions(docId)
+      .then((list) => {
+        if (cancelled) return;
+        setVersions([...list].sort((a, b) => b.version_no - a.version_no));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e, "버전 목록을 불러오지 못했습니다."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [docId]);
+
+  function toggle(id: number) {
+    setSelected((prev) => {
+      if (prev.includes(id)) return prev.filter((v) => v !== id);
+      if (prev.length >= 2) return prev;
+      return [...prev, id];
+    });
+  }
+
+  const selectedVersions = (versions ?? []).filter((v) => selected.includes(v.id));
+  const ordered = [...selectedVersions].sort((a, b) => a.version_no - b.version_no);
+  const canCompare = ordered.length === 2;
+
+  return (
+    <div className="flex h-full flex-col p-4">
+      {error && <p className="mb-2 text-sm text-primary">{error}</p>}
+
+      {!versions ? (
+        <p className="pt-8 text-center text-sm text-ink-muted">불러오는 중…</p>
+      ) : versions.length < 2 ? (
+        <p className="pt-8 text-center text-sm text-ink-muted">비교할 버전이 아직 2개 이상 없습니다.</p>
+      ) : (
+        <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+          {versions.map((v) => {
+            const checked = selected.includes(v.id);
+            const disabled = !checked && selected.length >= 2;
+            return (
+              <li key={v.id}>
+                <label
+                  className={`flex items-center gap-2 rounded-control border p-2.5 text-sm transition-colors ${
+                    checked ? "border-primary/40 bg-primary-soft/30" : "border-border"
+                  } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-surface"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={() => toggle(v.id)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <span className="font-medium text-ink">V{v.version_no}</span>
+                  <StatusBadge status={v.processing_status} />
+                  <span className="ml-auto shrink-0 text-xs text-ink-muted">
+                    {new Date(v.created_at).toLocaleString("ko-KR")}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <Button onClick={() => setDiffOpen(true)} disabled={!canCompare} className="mt-3 w-full justify-center py-2.5">
+        선택한 버전 비교
+      </Button>
+
+      {canCompare && (
+        <DiffModal
+          open={diffOpen}
+          onClose={() => setDiffOpen(false)}
+          docId={docId}
+          fromVersionId={ordered[0].id}
+          toVersionId={ordered[1].id}
+        />
+      )}
     </div>
   );
 }

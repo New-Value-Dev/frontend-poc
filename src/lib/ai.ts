@@ -58,15 +58,3 @@ export function validate(docId: string) {
 export function related(docId: string) {
   return api.post<RelatedDocument[]>(`/documents/${docId}/related`);
 }
-
-export type DiffResult = {
-  added: number;
-  removed: number;
-  modified: number;
-  semantic: number;
-  explanation: string;
-};
-
-export function compare(baseVersionId: string, targetVersionId: string) {
-  return api.post<DiffResult>("/documents/compare", { baseVersionId, targetVersionId });
-}

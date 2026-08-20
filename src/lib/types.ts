@@ -31,14 +31,48 @@ export type DocStatus =
   | "READY"
   | "FAILED";
 
+export type Visibility = "private" | "invite" | "public";
+export type MemberRole = "owner" | "member";
+export type MemberStatus = "pending" | "active" | "rejected";
+
 /* 백엔드 app/schemas/project.py · folder.py · document.py 반영 (snake_case). */
 export type Project = {
   id: number;
   name: string;
   description: string | null;
   created_by: string | null;
+  owner_id: number | null;
+  visibility: Visibility;
   created_at: string;
   updated_at: string;
+};
+
+export type ProjectMember = {
+  user_id: number;
+  email: string;
+  name: string | null;
+  role: MemberRole;
+  status: MemberStatus;
+  invited_by: number | null;
+  created_at: string;
+  responded_at: string | null;
+};
+
+export type ProjectInvitation = {
+  project_id: number;
+  project_name: string;
+  project_description: string | null;
+  visibility: Visibility;
+  invited_by: number | null;
+  invited_by_name: string | null;
+  invited_by_email: string | null;
+  invited_at: string;
+};
+
+export type UserSearchResult = {
+  id: number;
+  email: string;
+  name: string | null;
 };
 
 export type Folder = {
@@ -46,6 +80,7 @@ export type Folder = {
   project_id: number;
   parent_id: number | null;
   name: string;
+  rank: number;
   created_at: string;
 };
 
@@ -110,6 +145,29 @@ export type Section = {
   order_no: number;
   content: string | null;
   meta: Record<string, unknown> | null;
+};
+
+export type DiffToken = { op: "equal" | "insert" | "delete"; text: string };
+
+export type SectionDiff = {
+  op: "unchanged" | "added" | "deleted" | "modified";
+  from_section_id: number | null;
+  to_section_id: number | null;
+  level: number | null;
+  section_type: string | null;
+  title: string | null;
+  tokens: DiffToken[];
+};
+
+export type DiffSummary = { added: number; deleted: number; modified: number; unchanged: number };
+export type VersionRef = { id: number; version_no: number };
+
+export type DiffResult = {
+  document_id: number;
+  from_version: VersionRef;
+  to_version: VersionRef;
+  sections: SectionDiff[];
+  summary: DiffSummary;
 };
 
 /* --- AI 모듈 --- */
@@ -249,6 +307,38 @@ export type MyPageSummary = {
   stats: { projects: number; documents: number; processing: number };
   recentActivity: ActivityItem[];
 };
+
+export type NotificationType =
+  | "project.invite"
+  | "project.invite_accepted"
+  | "project.invite_declined"
+  | "project.member_removed"
+  | "analysis.complete"
+  | "analysis.fail";
+
+export type NotificationItem = {
+  id: number;
+  type: NotificationType | string;
+  title: string;
+  body: string | null;
+  url: string | null;
+  meta: Record<string, unknown> | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+export type NotificationListResponse = { items: NotificationItem[]; unread: number };
+
+export type UnreadCountResponse = { unread: number };
+
+export type PublicKeyResponse = { public_key: string };
+
+export type PushSubscribeRequest = {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+};
+
+export type PushUnsubscribeRequest = { endpoint: string };
 
 /* --- Common --- */
 export type Paginated<T> = { items: T[]; total: number; page: number; limit: number };

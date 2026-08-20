@@ -23,6 +23,11 @@ export function listRecentDocuments(limit = 5, projectId?: number) {
   return api.get<RecentDocument[]>(`/documents/recent?${params}`);
 }
 
+export function searchDocuments(q: string, limit = 8) {
+  const params = new URLSearchParams({ q, limit: String(limit) });
+  return api.get<RecentDocument[]>(`/documents/search?${params}`);
+}
+
 /** 멀티파트 업로드 → 202 Accepted 응답, 처리는 백그라운드에서 계속됨. */
 export function uploadDocument(
   projectId: string,
@@ -45,6 +50,13 @@ export function getDocument(docId: string) {
 
 export function deleteDocument(docId: string) {
   return api.delete<void>(`/documents/${docId}`);
+}
+
+export function moveDocument(
+  docId: string,
+  input: { project_id?: number; folder_id?: number | null },
+) {
+  return api.patch<Document>(`/documents/${docId}/move`, input);
 }
 
 /**

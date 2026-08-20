@@ -3,19 +3,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getProject, listFolders, createFolder, updateFolder, deleteFolder } from "@/lib/projects";
-import { listDocuments, uploadDocument, deleteDocument } from "@/lib/documents";
+import { getProject, listFolders, createFolder, updateFolder, deleteFolder, reorderFolder } from "@/lib/projects";
+import { listDocuments, uploadDocument, deleteDocument, moveDocument } from "@/lib/documents";
 import { getVersionStatus } from "@/lib/versions";
 import { errorMessage, isAuthError } from "@/lib/api";
 import { formatFileSize } from "@/lib/format";
 import type { Project, Folder, Document } from "@/lib/types";
-import { PageHeader, Card, Button, StatusBadge, ErrorBanner, BackLink } from "@/components/ui/primitives";
+import {
+  PageHeader,
+  Card,
+  Button,
+  StatusBadge,
+  ErrorBanner,
+  BackLink,
+  VisibilityBadge,
+} from "@/components/ui/primitives";
 import { ConfirmDialog, PromptDialog } from "@/components/ui/Modal";
 import { IconMenu } from "@/components/ui/IconMenu";
 import { FileTypeIcon, FolderTileIcon } from "@/components/ui/icons/FileTypeIcon";
 import { UploadDialog, type UploadInput } from "./UploadDialog";
-import { FolderTree, folderPath } from "./FolderTree";
+import { FolderTree, folderPath, DOCUMENT_DRAG_TYPE } from "./FolderTree";
 import { DocumentInfoDialog } from "./DocumentInfoDialog";
+import { MoveDocumentDialog } from "./MoveDocumentDialog";
+import { ProjectMembersDialog } from "./ProjectMembersDialog";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -43,11 +53,11 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [folderDialog, setFolderDialog] = useState(false);
   const [folderBusy, setFolderBusy] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<Folder | null>(null);
-  const [renameBusy, setRenameBusy] = useState(false);
   const [folderDeleteTarget, setFolderDeleteTarget] = useState<Folder | null>(null);
   const [folderDeleteBusy, setFolderDeleteBusy] = useState(false);
   const [infoTarget, setInfoTarget] = useState<Document | null>(null);
+  const [moveTarget, setMoveTarget] = useState<Document | null>(null);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -71,7 +81,8 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
     setLoading(false);
   }
 
-  const { loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const isOwner = project != null && (user?.role === "admin" || project.owner_id === user?.id);
 
   useEffect(() => {
     if (authLoading) return;
@@ -158,19 +169,13 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
     }
   }
 
-  async function renameFolderTo(name: string) {
-    if (!renameTarget) return;
-    const id = renameTarget.id;
-    setRenameBusy(true);
+  async function handleInlineRename(folder: Folder, name: string) {
     try {
-      const updated = await updateFolder(String(id), { name });
-      setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, name: updated.name } : f)));
-      setRenameTarget(null);
+      const updated = await updateFolder(String(folder.id), { name });
+      setFolders((prev) => prev.map((f) => (f.id === folder.id ? { ...f, name: updated.name } : f)));
     } catch (e) {
       setError(errorMessage(e, "폴더 이름 변경에 실패했습니다."));
       setNeedLogin(isAuthError(e));
-    } finally {
-      setRenameBusy(false);
     }
   }
 
@@ -194,12 +199,39 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
     }
   }
 
+  async function handleFolderReorder(folderId: number, parentId: number | null, targetIndex: number) {
+    try {
+      const updated = await reorderFolder(String(folderId), { parent_id: parentId, target_index: targetIndex });
+      const byId = new Map(updated.map((f) => [f.id, f]));
+      setFolders((prev) => prev.map((f) => byId.get(f.id) ?? f));
+    } catch (e) {
+      setError(errorMessage(e, "폴더 순서 변경에 실패했습니다."));
+      setNeedLogin(isAuthError(e));
+    }
+  }
+
+  async function handleDropDocument(documentId: number, folderId: number | null) {
+    try {
+      const moved = await moveDocument(String(documentId), { folder_id: folderId });
+      setDocuments((prev) => prev.map((d) => (d.id === documentId ? moved : d)));
+    } catch (e) {
+      setError(errorMessage(e, "문서 이동에 실패했습니다."));
+      setNeedLogin(isAuthError(e));
+    }
+  }
+
+  function handleDocumentMoved(moved: Document, targetProjectId: number) {
+    setMoveTarget(null);
+    if (targetProjectId !== Number(projectId)) {
+      setDocuments((prev) => prev.filter((d) => d.id !== moved.id));
+    } else {
+      setDocuments((prev) => prev.map((d) => (d.id === moved.id ? moved : d)));
+    }
+  }
+
   // 현재 폴더의 "직계 자식"만 (OS 디렉토리처럼) — 하위 폴더는 행 클릭으로 드릴다운한다.
   const childFolders = useMemo(
-    () =>
-      folders
-        .filter((f) => f.parent_id === activeFolder)
-        .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    () => folders.filter((f) => f.parent_id === activeFolder).sort((a, b) => a.rank - b.rank),
     [folders, activeFolder],
   );
   const childDocs = useMemo(
@@ -217,17 +249,29 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
   const shownFolders = q ? childFolders.filter((f) => f.name.toLowerCase().includes(q)) : childFolders;
   const shownDocs = q ? childDocs.filter((d) => d.name.toLowerCase().includes(q)) : childDocs;
 
+  if (loading) {
+    return <ProjectDocumentsSkeleton />;
+  }
+
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 pb-6">
       <div className="flex shrink-0 flex-col gap-3">
         <BackLink href="/projects">프로젝트</BackLink>
         <PageHeader
           title={project?.name ?? `프로젝트 #${projectId}`}
+          titleBadge={project && <VisibilityBadge visibility={project.visibility} />}
           description={`문서 ${documents.length}개`}
           actions={
-            <Button variant="dark" onClick={() => setUploadOpen(true)}>
-              문서 업로드
-            </Button>
+            <>
+              {project && (
+                <Button variant="outline" onClick={() => setMembersOpen(true)}>
+                  멤버
+                </Button>
+              )}
+              <Button variant="dark" onClick={() => setUploadOpen(true)}>
+                문서 업로드
+              </Button>
+            </>
           }
         />
       </div>
@@ -309,8 +353,10 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
               activeId={activeFolder}
               onSelect={goToFolder}
               onNew={() => setFolderDialog(true)}
-              onRename={setRenameTarget}
+              onRename={handleInlineRename}
               onDelete={setFolderDeleteTarget}
+              onReorder={handleFolderReorder}
+              onDropDocument={handleDropDocument}
             />
           </div>
 
@@ -364,7 +410,6 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
                       <IconMenu
                         ariaLabel={`${f.name} 폴더 메뉴`}
                         items={[
-                          { key: "rename", label: "이름 변경", onSelect: () => setRenameTarget(f) },
                           { key: "delete", label: "삭제", tone: "danger", onSelect: () => setFolderDeleteTarget(f) },
                         ]}
                       />
@@ -374,6 +419,11 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
                 {shownDocs.map((d) => (
                   <div
                     key={`doc-${d.id}`}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(DOCUMENT_DRAG_TYPE, String(d.id));
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
                     className="group relative z-0 flex items-center gap-3 border-b border-border px-4 py-2 last:border-b-0 hover:bg-surface has-[[aria-expanded=true]]:z-20"
                   >
                     <Link href={`/documents/${d.id}`} aria-label={d.name} className="absolute inset-0 z-0" />
@@ -396,6 +446,7 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
                         ariaLabel={`${d.name} 문서 메뉴`}
                         items={[
                           { key: "info", label: "정보", onSelect: () => setInfoTarget(d) },
+                          { key: "move", label: "이동", onSelect: () => setMoveTarget(d) },
                           { key: "delete", label: "삭제", tone: "danger", onSelect: () => setDeleteTarget(d) },
                         ]}
                       />
@@ -440,20 +491,6 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
         busy={folderBusy}
       />
 
-      {renameTarget && (
-        <PromptDialog
-          open
-          title="폴더 이름 변경"
-          placeholder="폴더 이름"
-          initialValue={renameTarget.name}
-          submitLabel="변경"
-          submitVariant="dark"
-          onSubmit={renameFolderTo}
-          onCancel={() => setRenameTarget(null)}
-          busy={renameBusy}
-        />
-      )}
-
       <ConfirmDialog
         open={folderDeleteTarget !== null}
         title="폴더 삭제"
@@ -464,6 +501,44 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
       />
 
       <DocumentInfoDialog document={infoTarget} onClose={() => setInfoTarget(null)} />
+
+      <MoveDocumentDialog
+        document={moveTarget}
+        currentProjectId={Number(projectId)}
+        onCancel={() => setMoveTarget(null)}
+        onMoved={handleDocumentMoved}
+      />
+
+      <ProjectMembersDialog
+        project={membersOpen ? project : null}
+        isOwner={isOwner}
+        onClose={() => setMembersOpen(false)}
+        onVisibilityChanged={setProject}
+      />
+    </div>
+  );
+}
+
+function ProjectDocumentsSkeleton() {
+  return (
+    <div className="mx-auto flex h-full max-w-6xl animate-pulse flex-col gap-6 pb-6" aria-busy>
+      <div className="flex flex-col gap-3">
+        <div className="h-4 w-16 rounded bg-surface" />
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <div className="h-7 w-56 rounded bg-surface-2" />
+            <div className="mt-2 h-4 w-24 rounded bg-surface" />
+          </div>
+          <div className="h-9 w-24 rounded-control bg-surface-2" />
+        </div>
+      </div>
+      <div className="flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-panel border border-border bg-surface">
+        <div className="h-11 shrink-0 border-b border-border" />
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          <div className="h-40 shrink-0 border-b border-border lg:h-auto lg:w-56 lg:border-b-0 lg:border-r" />
+          <div className="min-h-0 flex-1" />
+        </div>
+      </div>
     </div>
   );
 }
