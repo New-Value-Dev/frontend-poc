@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Button, Field, Input } from "./primitives";
+import { Button, Field, Input, type ButtonVariant } from "./primitives";
 
 export function Modal({
   open,
@@ -107,6 +107,7 @@ export function PromptDialog({
   placeholder,
   initialValue = "",
   submitLabel = "생성",
+  submitVariant = "primary",
   onSubmit,
   onCancel,
   busy = false,
@@ -118,6 +119,7 @@ export function PromptDialog({
   placeholder?: string;
   initialValue?: string;
   submitLabel?: string;
+  submitVariant?: ButtonVariant;
   onSubmit: (value: string) => void;
   onCancel: () => void;
   busy?: boolean;
@@ -153,7 +155,7 @@ export function PromptDialog({
           <Button variant="outline" onClick={onCancel}>
             취소
           </Button>
-          <Button type="submit" disabled={busy || !value.trim()}>
+          <Button type="submit" variant={submitVariant} disabled={busy || !value.trim()}>
             {busy ? "처리 중…" : submitLabel}
           </Button>
         </div>

@@ -232,5 +232,23 @@ export type ActivityItem = {
   targetAlive: boolean;
 };
 
+/* --- MyPage --- */
+/** `DashboardSummary`/`ActivityItem`과 달리 project_id가 아니라 로그인 사용자(created_by/actor_id) 기준으로 스코핑됨. */
+export type MyPageProfile = {
+  id: number;
+  email: string;
+  name: string | null;
+  role: string;
+  provider: string;
+  lastLoginAt: string | null;
+  memberSince: string;
+};
+
+export type MyPageSummary = {
+  profile: MyPageProfile;
+  stats: { projects: number; documents: number; processing: number };
+  recentActivity: ActivityItem[];
+};
+
 /* --- Common --- */
 export type Paginated<T> = { items: T[]; total: number; page: number; limit: number };

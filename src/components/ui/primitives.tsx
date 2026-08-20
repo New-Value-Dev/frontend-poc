@@ -92,12 +92,13 @@ export function SectionTitle({ children }: { children: ReactNode }) {
 
 const INPUT_FOCUS = "outline-none focus:border-primary focus:ring-2 focus:ring-primary/25";
 
-export type ButtonVariant = "primary" | "outline" | "ghost";
+export type ButtonVariant = "primary" | "outline" | "ghost" | "dark";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary: "bg-primary text-white hover:bg-primary-hover",
   outline: "border border-border bg-canvas text-ink hover:bg-surface",
   ghost: "text-ink-muted hover:bg-surface hover:text-ink",
+  dark: "bg-ink text-white hover:bg-ink/90",
 };
 
 export function buttonClass(variant: ButtonVariant = "primary", className = "") {

@@ -158,23 +158,30 @@ export function PipelineStrip({
      * 맞닿은 셀 자체가 순서를 표현해 화살표 커넥터가 필요 없고, `min-w`로 각
      * 세그먼트의 가독성을 유지하면서 좁은 화면에서는 스크롤되게 한다.
      */
-    <ol className="flex overflow-x-auto rounded-panel border border-border">
-      {stages.map((s, i) => (
-        <li
-          key={s.label}
-          /*
-           * 빈 세그먼트는 채색하지 않는다. 대부분 비어 있는 단계까지 tone을
-           * 입히면 대비가 AA 턱걸이(4.60:1)가 되지만, 무채색이면 5.28:1로
-           * 더 잘 읽히고 색은 실제 문서가 있는 곳에만 나타나 의미도 분명해진다.
-           */
-          className={`min-w-[88px] flex-1 px-2 py-2.5 text-center ${
-            i > 0 ? "border-l border-border" : ""
-          } ${s.tone === "idle" ? "text-ink-muted" : TONE_STYLES[s.tone]}`}
-        >
-          <p className="font-mono text-lg font-semibold leading-none">{s.count}</p>
-          <p className="mt-1 text-xs">{s.label}</p>
-        </li>
-      ))}
-    </ol>
+    <div className="relative overflow-hidden rounded-panel border border-border">
+      <ol className="flex overflow-x-auto">
+        {stages.map((s, i) => (
+          <li
+            key={s.label}
+            /*
+             * 빈 세그먼트는 채색하지 않는다. 대부분 비어 있는 단계까지 tone을
+             * 입히면 대비가 AA 턱걸이(4.60:1)가 되지만, 무채색이면 5.28:1로
+             * 더 잘 읽히고 색은 실제 문서가 있는 곳에만 나타나 의미도 분명해진다.
+             */
+            className={`min-w-[88px] flex-1 px-2 py-2.5 text-center ${
+              i > 0 ? "border-l border-border" : ""
+            } ${s.tone === "idle" ? "text-ink-muted" : TONE_STYLES[s.tone]}`}
+          >
+            <p className="font-mono text-lg font-semibold leading-none">{s.count}</p>
+            <p className="mt-1 text-xs">{s.label}</p>
+          </li>
+        ))}
+      </ol>
+      {/* 좁은 화면에서 세그먼트가 넘칠 때 스크롤 가능함을 알리는 페이드 힌트 */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-surface to-transparent lg:hidden"
+      />
+    </div>
   );
 }

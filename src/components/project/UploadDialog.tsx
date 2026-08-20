@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button, Field, Input, Textarea, Select } from "@/components/ui/primitives";
+import { FileTypeIcon } from "@/components/ui/icons/FileTypeIcon";
+import { formatFileSize } from "@/lib/format";
 import { flattenFolders } from "./FolderTree";
 import type { Folder } from "@/lib/types";
 
@@ -16,11 +18,6 @@ function extOf(name: string) {
 function stripExt(name: string) {
   const i = name.lastIndexOf(".");
   return i > 0 ? name.slice(0, i) : name;
-}
-function fmtSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export type UploadInput = {
@@ -127,7 +124,7 @@ export function UploadDialog({
             onDragLeave={() => setDragOver(false)}
             onDrop={onDrop}
             className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors ${
-              dragOver ? "border-primary bg-primary-soft" : "border-border bg-surface hover:bg-surface-2"
+              dragOver ? "border-ink bg-surface-2" : "border-border bg-surface hover:bg-surface-2"
             }`}
           >
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="text-ink-muted">
@@ -141,18 +138,16 @@ export function UploadDialog({
           <div className="rounded-xl border border-border bg-surface p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary-soft text-[10px] font-bold uppercase text-primary">
-                  {ext}
-                </span>
+                <FileTypeIcon fileName={file.name} size={30} className="shrink-0" />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-ink">{file.name}</p>
-                  <p className="text-xs text-ink-muted">{fmtSize(file.size)}</p>
+                  <p className="text-xs text-ink-muted">{formatFileSize(file.size)}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="shrink-0 text-xs text-primary hover:underline"
+                className="shrink-0 text-xs text-ink-muted hover:text-ink hover:underline"
               >
                 다른 파일
               </button>
@@ -230,7 +225,7 @@ export function UploadDialog({
           <Button variant="outline" onClick={onCancel}>
             취소
           </Button>
-          <Button onClick={submit} disabled={!file || !name.trim() || busy}>
+          <Button variant="dark" onClick={submit} disabled={!file || !name.trim() || busy}>
             {busy ? "업로드 중…" : "업로드"}
           </Button>
         </div>

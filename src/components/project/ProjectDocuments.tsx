@@ -1,42 +1,37 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getProject, listFolders, createFolder, updateFolder, deleteFolder } from "@/lib/projects";
 import { listDocuments, uploadDocument, deleteDocument } from "@/lib/documents";
 import { getVersionStatus } from "@/lib/versions";
 import { errorMessage, isAuthError } from "@/lib/api";
+import { formatFileSize } from "@/lib/format";
 import type { Project, Folder, Document } from "@/lib/types";
-import {
-  PageHeader,
-  Card,
-  Button,
-  StatusBadge,
-  ErrorBanner,
-  BackLink,
-} from "@/components/ui/primitives";
+import { PageHeader, Card, Button, StatusBadge, ErrorBanner, BackLink } from "@/components/ui/primitives";
 import { ConfirmDialog, PromptDialog } from "@/components/ui/Modal";
+import { IconMenu } from "@/components/ui/IconMenu";
+import { FileTypeIcon, FolderTileIcon } from "@/components/ui/icons/FileTypeIcon";
 import { UploadDialog, type UploadInput } from "./UploadDialog";
-import { FolderTree, descendantIds } from "./FolderTree";
+import { FolderTree, folderPath } from "./FolderTree";
+import { DocumentInfoDialog } from "./DocumentInfoDialog";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" });
-}
-
 const EMPTY = "-";
 
-function authorLabel(d: Document) {
-  return d.author?.name || d.author?.email || d.created_by || EMPTY;
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
 export function ProjectDocuments({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [activeFolder, setActiveFolder] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needLogin, setNeedLogin] = useState(false);
@@ -52,6 +47,7 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
   const [renameBusy, setRenameBusy] = useState(false);
   const [folderDeleteTarget, setFolderDeleteTarget] = useState<Folder | null>(null);
   const [folderDeleteBusy, setFolderDeleteBusy] = useState(false);
+  const [infoTarget, setInfoTarget] = useState<Document | null>(null);
 
   async function load() {
     setLoading(true);
@@ -184,7 +180,7 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
     setFolderDeleteBusy(true);
     try {
       await deleteFolder(String(id));
-      if (activeFolder === id) setActiveFolder(null);
+      if (activeFolder === id) goToFolder(null);
       // 재동기화 — 폴더 삭제로 그 안의 문서는 미분류가 된다 (folder_id → null).
       const [f, d] = await Promise.all([listFolders(projectId), listDocuments(projectId)]);
       setFolders(f);
@@ -198,95 +194,220 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
     }
   }
 
-  const shown = useMemo(() => {
-    if (activeFolder == null) return documents;
-    const ids = descendantIds(activeFolder, folders);
-    return documents.filter((d) => d.folder_id != null && ids.has(d.folder_id));
-  }, [documents, folders, activeFolder]);
+  // 현재 폴더의 "직계 자식"만 (OS 디렉토리처럼) — 하위 폴더는 행 클릭으로 드릴다운한다.
+  const childFolders = useMemo(
+    () =>
+      folders
+        .filter((f) => f.parent_id === activeFolder)
+        .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    [folders, activeFolder],
+  );
+  const childDocs = useMemo(
+    () => documents.filter((d) => d.folder_id === activeFolder),
+    [documents, activeFolder],
+  );
+
+  /** 폴더 이동 시 이전 검색어가 새 폴더에도 남아있지 않게 함께 초기화. */
+  function goToFolder(id: number | null) {
+    setQuery("");
+    setActiveFolder(id);
+  }
+
+  const q = query.trim().toLowerCase();
+  const shownFolders = q ? childFolders.filter((f) => f.name.toLowerCase().includes(q)) : childFolders;
+  const shownDocs = q ? childDocs.filter((d) => d.name.toLowerCase().includes(q)) : childDocs;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <div className="flex flex-col gap-3">
+    <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 pb-6">
+      <div className="flex shrink-0 flex-col gap-3">
         <BackLink href="/projects">프로젝트</BackLink>
         <PageHeader
           title={project?.name ?? `프로젝트 #${projectId}`}
           description={`문서 ${documents.length}개`}
-          /* 전각 `＋` 글리프를 아이콘 대신 쓰던 것을 제거 — 버튼 라벨이 이미 업로드임을 설명한다. */
-          actions={<Button onClick={() => setUploadOpen(true)}>문서 업로드</Button>}
+          actions={
+            <Button variant="dark" onClick={() => setUploadOpen(true)}>
+              문서 업로드
+            </Button>
+          }
         />
       </div>
 
       {error && <ErrorBanner message={error} needLogin={needLogin} />}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr]">
-        {/* 폴더 트리 */}
-        <FolderTree
-          folders={folders}
-          activeId={activeFolder}
-          onSelect={setActiveFolder}
-          onNew={() => setFolderDialog(true)}
-          onRename={setRenameTarget}
-          onDelete={setFolderDeleteTarget}
-        />
+      {/* 파인더 창: 페이지 남은 공간을 꽉 채우고, 그 안의 사이드바/리스트가 각자 스크롤된다 */}
+      <Card className="flex min-h-[420px] flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => router.push("/projects")}
+              aria-label="프로젝트 목록으로"
+              title="프로젝트 목록으로"
+              className="h-3 w-3 rounded-full bg-[#ff5f57] transition-[filter] hover:brightness-90"
+            />
+            <span aria-hidden className="h-3 w-3 rounded-full bg-[#febc2e]" />
+            <span aria-hidden className="h-3 w-3 rounded-full bg-[#28c840]" />
+          </div>
 
-        {/* 문서 목록 */}
-        {loading ? (
-          <Card className="grid place-items-center py-16 text-sm text-ink-muted">불러오는 중…</Card>
-        ) : shown.length === 0 && !error ? (
-          <Card className="grid place-items-center gap-1 py-16 text-center">
-            <p className="text-sm font-medium text-ink">문서가 없습니다.</p>
-            <p className="text-xs text-ink-muted">＋ 문서 업로드로 시작하세요.</p>
-          </Card>
-        ) : (
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] whitespace-nowrap text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-ink-muted">
-                    <th className="px-5 py-3 font-medium">문서명</th>
-                    <th className="px-5 py-3 font-medium">유형</th>
-                    <th className="px-5 py-3 font-medium">버전</th>
-                    <th className="px-5 py-3 font-medium">처리상태</th>
-                    <th className="px-5 py-3 font-medium">작성자</th>
-                    <th className="px-5 py-3 font-medium">생성일</th>
-                    <th className="px-5 py-3 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {shown.map((d) => (
-                    <tr key={d.id} className="hover:bg-surface">
-                      <td className="px-5 py-3">
-                        <Link href={`/documents/${d.id}`} className="font-medium text-ink hover:text-primary">
-                          {d.name}
-                        </Link>
-                      </td>
-                      <td className="px-5 py-3 text-ink-muted">{d.document_type ?? EMPTY}</td>
-                      <td className="px-5 py-3 text-ink-muted">
-                        {d.current_version ? `V${d.current_version.version_no}` : EMPTY}
-                      </td>
-                      <td className="px-5 py-3">
-                        {/* 버전이 없으면 UPLOADED로 본다 — 백엔드 RecentDocumentRead와 같은 규칙. */}
-                        <StatusBadge status={d.current_version?.processing_status ?? "UPLOADED"} />
-                      </td>
-                      <td className="px-5 py-3 text-ink-muted">{authorLabel(d)}</td>
-                      <td className="px-5 py-3 text-ink-muted">{fmtDate(d.created_at)}</td>
-                      <td className="px-5 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget(d)}
-                          className="text-xs text-ink-muted hover:text-primary"
-                        >
-                          삭제
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-      </div>
+          <nav
+            aria-label="현재 위치"
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap text-sm text-ink-muted"
+          >
+            <button
+              type="button"
+              onClick={() => goToFolder(null)}
+              className={activeFolder == null ? "font-medium text-ink" : "hover:text-ink"}
+            >
+              {project?.name ?? "프로젝트"}
+            </button>
+            {folderPath(activeFolder, folders).map((f, i, arr) => (
+              <span key={f.id} className="flex items-center gap-1">
+                <span aria-hidden className="text-ink-muted/60">
+                  /
+                </span>
+                <button
+                  type="button"
+                  onClick={() => goToFolder(f.id)}
+                  className={i === arr.length - 1 ? "font-medium text-ink" : "hover:text-ink"}
+                >
+                  {f.name}
+                </button>
+              </span>
+            ))}
+          </nav>
+
+          <div className="relative w-32 shrink-0 sm:w-48">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="검색"
+              aria-label="현재 폴더에서 검색"
+              className="w-full rounded-full border border-border bg-surface py-1.5 pl-8 pr-3 text-xs text-ink placeholder:text-ink-muted focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+            />
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          {/* 폴더 사이드바 — 내용이 넘치면 이 안에서만 스크롤 */}
+          <div className="shrink-0 overflow-y-auto border-b border-border lg:w-56 lg:border-b-0 lg:border-r">
+            <FolderTree
+              folders={folders}
+              activeId={activeFolder}
+              onSelect={goToFolder}
+              onNew={() => setFolderDialog(true)}
+              onRename={setRenameTarget}
+              onDelete={setFolderDeleteTarget}
+            />
+          </div>
+
+          {/* 파일 리스트 */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {loading ? (
+              <div className="flex flex-1 items-center justify-center text-sm text-ink-muted">불러오는 중…</div>
+            ) : shownFolders.length === 0 && shownDocs.length === 0 && !error ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
+                <p className="text-sm font-medium text-ink">
+                  {q
+                    ? "검색 결과가 없습니다."
+                    : activeFolder == null
+                      ? "문서가 없습니다."
+                      : "이 폴더가 비어 있습니다."}
+                </p>
+                {!q && <p className="text-xs text-ink-muted">＋ 문서 업로드로 시작하세요.</p>}
+              </div>
+            ) : (
+              <>
+                <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2 text-xs text-ink-muted">
+                  <span className="flex-1">이름</span>
+                  <span className="hidden w-20 shrink-0 sm:block">상태</span>
+                  <span className="hidden w-16 shrink-0 text-right md:block">크기</span>
+                  <span className="hidden w-24 shrink-0 text-right lg:block">생성일</span>
+                  <span className="w-7 shrink-0" aria-hidden />
+                </div>
+                {/* 파일 목록만 스크롤되고, 위 타이틀바/경로/열 헤더는 고정된다 */}
+                <div className="flex-1 overflow-y-auto">
+                {shownFolders.map((f) => (
+                  <div
+                    key={`folder-${f.id}`}
+                    className="group relative z-0 flex items-center gap-3 border-b border-border px-4 py-2 last:border-b-0 hover:bg-surface has-[[aria-expanded=true]]:z-20"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => goToFolder(f.id)}
+                      aria-label={f.name}
+                      className="absolute inset-0 z-0"
+                    />
+                    <span className="pointer-events-none flex min-w-0 flex-1 items-center gap-2.5">
+                      <FolderTileIcon size={20} className="shrink-0" />
+                      <span className="truncate text-sm text-ink">{f.name}</span>
+                    </span>
+                    <span className="hidden w-20 shrink-0 text-xs text-ink-muted sm:block">{EMPTY}</span>
+                    <span className="hidden w-16 shrink-0 text-right text-xs text-ink-muted md:block">{EMPTY}</span>
+                    <span className="hidden w-24 shrink-0 text-right text-xs text-ink-muted lg:block">
+                      {fmtDate(f.created_at)}
+                    </span>
+                    <span className="z-10 w-7 shrink-0">
+                      <IconMenu
+                        ariaLabel={`${f.name} 폴더 메뉴`}
+                        items={[
+                          { key: "rename", label: "이름 변경", onSelect: () => setRenameTarget(f) },
+                          { key: "delete", label: "삭제", tone: "danger", onSelect: () => setFolderDeleteTarget(f) },
+                        ]}
+                      />
+                    </span>
+                  </div>
+                ))}
+                {shownDocs.map((d) => (
+                  <div
+                    key={`doc-${d.id}`}
+                    className="group relative z-0 flex items-center gap-3 border-b border-border px-4 py-2 last:border-b-0 hover:bg-surface has-[[aria-expanded=true]]:z-20"
+                  >
+                    <Link href={`/documents/${d.id}`} aria-label={d.name} className="absolute inset-0 z-0" />
+                    <span className="pointer-events-none flex min-w-0 flex-1 items-center gap-2.5">
+                      <FileTypeIcon fileName={d.current_version?.original_file_name} size={20} className="shrink-0" />
+                      <span className="truncate text-sm text-ink">{d.name}</span>
+                    </span>
+                    <span className="hidden w-20 shrink-0 sm:block">
+                      {/* 버전이 없으면 UPLOADED로 본다 — 백엔드 RecentDocumentRead와 같은 규칙. */}
+                      <StatusBadge status={d.current_version?.processing_status ?? "UPLOADED"} />
+                    </span>
+                    <span className="hidden w-16 shrink-0 text-right text-xs text-ink-muted md:block">
+                      {formatFileSize(d.current_version?.file_size)}
+                    </span>
+                    <span className="hidden w-24 shrink-0 text-right text-xs text-ink-muted lg:block">
+                      {fmtDate(d.created_at)}
+                    </span>
+                    <span className="z-10 w-7 shrink-0">
+                      <IconMenu
+                        ariaLabel={`${d.name} 문서 메뉴`}
+                        items={[
+                          { key: "info", label: "정보", onSelect: () => setInfoTarget(d) },
+                          { key: "delete", label: "삭제", tone: "danger", onSelect: () => setDeleteTarget(d) },
+                        ]}
+                      />
+                    </span>
+                  </div>
+                ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </Card>
 
       {uploadOpen && (
         <UploadDialog
@@ -313,6 +434,7 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
         title="새 폴더"
         label={activeFolder != null ? "선택한 폴더 하위에 생성됩니다." : "최상위에 생성됩니다."}
         placeholder="폴더 이름"
+        submitVariant="dark"
         onSubmit={createNewFolder}
         onCancel={() => setFolderDialog(false)}
         busy={folderBusy}
@@ -325,6 +447,7 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
           placeholder="폴더 이름"
           initialValue={renameTarget.name}
           submitLabel="변경"
+          submitVariant="dark"
           onSubmit={renameFolderTo}
           onCancel={() => setRenameTarget(null)}
           busy={renameBusy}
@@ -339,6 +462,8 @@ export function ProjectDocuments({ projectId }: { projectId: string }) {
         onCancel={() => setFolderDeleteTarget(null)}
         busy={folderDeleteBusy}
       />
+
+      <DocumentInfoDialog document={infoTarget} onClose={() => setInfoTarget(null)} />
     </div>
   );
 }

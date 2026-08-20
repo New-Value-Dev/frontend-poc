@@ -230,6 +230,64 @@ export function DocumentDetail({ docId }: { docId: string }) {
     );
   }
 
+  // 메타데이터/개요는 데스크톱 사이드 패널과 모바일 접이식 패널이 그대로 공유한다.
+  const metaBody = (
+    <>
+      <PaneLabel>메타데이터</PaneLabel>
+      <dl className="flex flex-col gap-2 text-xs">
+        <MetaRow k="유형" v={doc.document_type ?? EMPTY} />
+        <MetaRow k="버전" v={version ? `V${version.version_no}` : EMPTY} />
+        <MetaRow k="파일" v={version?.original_file_name ?? EMPTY} />
+        <MetaRow k="크기" v={fmtSize(version?.file_size)} />
+        <MetaRow k="섹션" v={`${sections.length}개`} />
+        <MetaRow k="버전 수" v={`${versions.length}개`} />
+        <MetaRow
+          k="작성자"
+          v={doc.author?.name || doc.author?.email || doc.created_by || EMPTY}
+        />
+        <MetaRow k="업로드" v={fmtDate(doc.created_at)} />
+      </dl>
+      {doc.description && (
+        <div className="mt-3 border-t border-border pt-3">
+          <PaneLabel className="mb-1">설명</PaneLabel>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
+            {doc.description}
+          </p>
+        </div>
+      )}
+    </>
+  );
+
+  function outlinePane(scrollable: boolean) {
+    if (outline.length === 0) {
+      return (
+        <p className="text-xs text-ink-muted">
+          {ordered.length === 0 ? "아직 섹션이 없습니다." : "제목이 있는 섹션이 없습니다."}
+        </p>
+      );
+    }
+    return (
+      <ul className={scrollable ? "min-h-0 flex-1 overflow-y-auto" : undefined}>
+        {outline.map((s) => (
+          <li key={s.id}>
+            <a
+              href={`#sec-${s.id}`}
+              onClick={(e) => {
+                e.preventDefault();
+                focusSection(s.id);
+              }}
+              style={{ paddingLeft: 8 + depthOf(s) * 12 }}
+              title={titleOf(s)}
+              className={`block truncate rounded-control py-1.5 pr-2 text-sm text-ink-muted transition-colors hover:bg-surface hover:text-ink ${FOCUS_RING} focus-visible:ring-offset-0`}
+            >
+              {titleOf(s)}
+            </a>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-full">
       {/* 헤더 */}
@@ -262,61 +320,34 @@ export function DocumentDetail({ docId }: { docId: string }) {
 
       {error && <ErrorBanner message={error} needLogin={needLogin} />}
 
+      {/* lg 미만에서는 메타데이터/개요가 사라지지 않도록 접이식 패널로 노출한다 (뷰어 위, 페이지 스크롤에 포함). */}
+      <details className="group rounded-panel border border-border bg-canvas lg:hidden">
+        <summary
+          className={`flex cursor-pointer list-none items-center justify-between rounded-panel px-4 py-3 text-sm font-medium text-ink ${FOCUS_RING}`}
+        >
+          메타데이터 · 문서 개요
+          <span aria-hidden className="text-ink-muted transition-transform group-open:rotate-180">
+            ⌄
+          </span>
+        </summary>
+        <div className="border-t border-border p-4">
+          {metaBody}
+          <div className="mt-4 border-t border-border pt-4">
+            <PaneLabel className="mb-2">문서 개요</PaneLabel>
+            {outlinePane(false)}
+          </div>
+        </div>
+      </details>
+
       {/* 3분할: 아웃라인 · 뷰어 · AI 패널 — lg 미만에서는 각자 스크롤 대신 페이지 전체가 스크롤된다 */}
       <div className="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[200px_1fr_380px]">
-        {/* 상단은 메타데이터(항상 표시) · 아래는 스크롤되는 아웃라인 */}
+        {/* 상단은 메타데이터(항상 표시) · 아래는 스크롤되는 아웃라인 — lg 이상 전용, 모바일은 위 접이식 패널로 대체 */}
         <div className="hidden min-h-0 flex-col gap-4 lg:flex">
-          <div className="shrink-0 rounded-panel border border-border bg-canvas p-4">
-            <PaneLabel>메타데이터</PaneLabel>
-            <dl className="flex flex-col gap-2 text-xs">
-              <MetaRow k="유형" v={doc.document_type ?? EMPTY} />
-              <MetaRow k="버전" v={version ? `V${version.version_no}` : EMPTY} />
-              <MetaRow k="파일" v={version?.original_file_name ?? EMPTY} />
-              <MetaRow k="크기" v={fmtSize(version?.file_size)} />
-              <MetaRow k="섹션" v={`${sections.length}개`} />
-              <MetaRow k="버전 수" v={`${versions.length}개`} />
-              <MetaRow
-                k="작성자"
-                v={doc.author?.name || doc.author?.email || doc.created_by || EMPTY}
-              />
-              <MetaRow k="업로드" v={fmtDate(doc.created_at)} />
-            </dl>
-            {doc.description && (
-              <div className="mt-3 border-t border-border pt-3">
-                <PaneLabel className="mb-1">설명</PaneLabel>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                  {doc.description}
-                </p>
-              </div>
-            )}
-          </div>
+          <div className="shrink-0 rounded-panel border border-border bg-canvas p-4">{metaBody}</div>
 
           <div className="flex min-h-0 flex-1 flex-col rounded-panel border border-border bg-canvas p-4">
             <PaneLabel className="mb-2 shrink-0">문서 개요</PaneLabel>
-            {outline.length === 0 ? (
-              <p className="text-xs text-ink-muted">
-                {ordered.length === 0 ? "아직 섹션이 없습니다." : "제목이 있는 섹션이 없습니다."}
-              </p>
-            ) : (
-              <ul className="min-h-0 flex-1 overflow-y-auto">
-                {outline.map((s) => (
-                  <li key={s.id}>
-                    <a
-                      href={`#sec-${s.id}`}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        focusSection(s.id);
-                      }}
-                      style={{ paddingLeft: 8 + depthOf(s) * 12 }}
-                      title={titleOf(s)}
-                      className={`block truncate rounded-control py-1.5 pr-2 text-sm text-ink-muted transition-colors hover:bg-surface hover:text-ink ${FOCUS_RING} focus-visible:ring-offset-0`}
-                    >
-                      {titleOf(s)}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {outlinePane(true)}
           </div>
         </div>
 

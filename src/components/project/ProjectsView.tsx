@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { listProjects, createProject, deleteProject } from "@/lib/projects";
 import { errorMessage, isAuthError } from "@/lib/api";
 import type { Project } from "@/lib/types";
-import { PageHeader, Card, Button, ErrorBanner, Field, Input } from "@/components/ui/primitives";
+import { PageHeader, Card, Button, ErrorBanner, Field, Input, BackLink } from "@/components/ui/primitives";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
+import { LinkIconTile } from "@/components/ui/IconTile";
+import { IconMenu } from "@/components/ui/IconMenu";
+import { FolderTileIcon } from "@/components/ui/icons/FileTypeIcon";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 function fmtDate(iso: string) {
@@ -18,7 +21,9 @@ function fmtDate(iso: string) {
 }
 
 export function ProjectsView() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needLogin, setNeedLogin] = useState(false);
@@ -31,6 +36,7 @@ export function ProjectsView() {
 
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [infoTarget, setInfoTarget] = useState<Project | null>(null);
 
   async function load() {
     setLoading(true);
@@ -99,57 +105,103 @@ export function ProjectsView() {
     }
   }
 
+  const q = query.trim().toLowerCase();
+  const shown = q ? projects.filter((p) => p.name.toLowerCase().includes(q)) : projects;
+
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <PageHeader
-        title="프로젝트"
-        description="프로젝트별로 폴더와 문서를 구성하고 AI 기능을 적용합니다."
-        actions={<Button onClick={openForm}>새 프로젝트</Button>}
-      />
+    <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 pb-6">
+      <div className="flex shrink-0 flex-col gap-3">
+        <BackLink href="/">대시보드</BackLink>
+        <PageHeader
+          title="프로젝트"
+          description="프로젝트별로 폴더와 문서를 구성하고 AI 기능을 적용합니다."
+          actions={
+            <Button variant="dark" onClick={openForm}>
+              새 프로젝트
+            </Button>
+          }
+        />
+      </div>
 
       {error && <ErrorBanner message={error} needLogin={needLogin} />}
 
-      {loading ? (
-        <Card className="grid place-items-center py-16 text-sm text-ink-muted">불러오는 중…</Card>
-      ) : projects.length === 0 && !error ? (
-        <Card className="grid place-items-center gap-1 py-16 text-center">
-          <p className="text-sm font-medium text-ink">아직 프로젝트가 없습니다.</p>
-          <p className="text-xs text-ink-muted">＋ 새 프로젝트로 시작하세요.</p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {projects.map((p) => (
-            <Card key={p.id} className="flex flex-col p-5 transition-shadow hover:shadow-sm">
-              <div className="flex items-start justify-between">
-                <div className="min-w-0">
-                  <Link
-                    href={`/projects/${p.id}`}
-                    className="text-base font-semibold text-ink hover:text-primary"
-                  >
-                    {p.name}
-                  </Link>
-                  <p className="mt-0.5 truncate text-xs text-ink-muted">
-                    {p.description || "설명 없음"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDeleteTarget(p)}
-                  className="rounded-md px-2 py-1 text-xs text-ink-muted hover:bg-surface hover:text-primary"
-                >
-                  삭제
-                </button>
-              </div>
-              <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-ink-muted">
-                <span>생성 {fmtDate(p.created_at)}</span>
-                <Link href={`/projects/${p.id}`} className="font-medium text-primary hover:underline">
-                  열기 →
-                </Link>
-              </div>
-            </Card>
-          ))}
+      {/* 파인더 창: 페이지 남은 공간을 꽉 채우고, 목록만 내부에서 스크롤된다 */}
+      <Card className="flex min-h-[420px] flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              aria-label="대시보드로"
+              title="대시보드로"
+              className="h-3 w-3 rounded-full bg-[#ff5f57] transition-[filter] hover:brightness-90"
+            />
+            <span aria-hidden className="h-3 w-3 rounded-full bg-[#febc2e]" />
+            <span aria-hidden className="h-3 w-3 rounded-full bg-[#28c840]" />
+          </div>
+
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">프로젝트</span>
+
+          <div className="relative w-32 shrink-0 sm:w-48">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="검색"
+              aria-label="프로젝트 검색"
+              className="w-full rounded-full border border-border bg-surface py-1.5 pl-8 pr-3 text-xs text-ink placeholder:text-ink-muted focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+            />
+          </div>
         </div>
-      )}
+
+        <div className="flex min-h-0 flex-1 flex-col">
+          {loading ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-ink-muted">불러오는 중…</div>
+          ) : shown.length === 0 && !error ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
+              <p className="text-sm font-medium text-ink">
+                {q ? "검색 결과가 없습니다." : "아직 프로젝트가 없습니다."}
+              </p>
+              {!q && <p className="text-xs text-ink-muted">＋ 새 프로젝트로 시작하세요.</p>}
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              <div className="grid grid-cols-3 gap-2 p-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
+                {shown.map((p) => (
+                  <LinkIconTile
+                    key={p.id}
+                    href={`/projects/${p.id}`}
+                    icon={<FolderTileIcon size={44} />}
+                    label={p.name}
+                    menu={
+                      <IconMenu
+                        ariaLabel={`${p.name} 프로젝트 메뉴`}
+                        items={[
+                          { key: "info", label: "정보", onSelect: () => setInfoTarget(p) },
+                          { key: "delete", label: "삭제", tone: "danger", onSelect: () => setDeleteTarget(p) },
+                        ]}
+                      />
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
 
       <Modal
         open={showForm}
@@ -180,7 +232,7 @@ export function ProjectsView() {
             <Button variant="outline" onClick={() => setShowForm(false)}>
               취소
             </Button>
-            <Button type="submit" disabled={submitting || !name.trim()}>
+            <Button type="submit" variant="dark" disabled={submitting || !name.trim()}>
               {submitting ? "생성 중…" : "생성"}
             </Button>
           </div>
@@ -195,6 +247,24 @@ export function ProjectsView() {
         onCancel={() => setDeleteTarget(null)}
         busy={deleteBusy}
       />
+
+      <Modal
+        open={infoTarget !== null}
+        onClose={() => setInfoTarget(null)}
+        title="프로젝트 정보"
+        className="max-w-sm"
+      >
+        {infoTarget && (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm">
+            <dt className="text-ink-muted">이름</dt>
+            <dd className="text-ink">{infoTarget.name}</dd>
+            <dt className="text-ink-muted">설명</dt>
+            <dd className="text-ink">{infoTarget.description || "설명 없음"}</dd>
+            <dt className="text-ink-muted">생성일</dt>
+            <dd className="text-ink">{fmtDate(infoTarget.created_at)}</dd>
+          </dl>
+        )}
+      </Modal>
     </div>
   );
 }

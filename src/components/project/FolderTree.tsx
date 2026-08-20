@@ -32,6 +32,19 @@ export function flattenFolders(folders: Folder[]): { id: number; name: string; d
   return out;
 }
 
+/** activeFolder부터 루트까지의 조상 체인 (루트 → 자기 자신 순서). 브레드크럼용. */
+export function folderPath(folderId: number | null, folders: Folder[]): Folder[] {
+  if (folderId == null) return [];
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const path: Folder[] = [];
+  let cur = byId.get(folderId);
+  while (cur) {
+    path.unshift(cur);
+    cur = cur.parent_id != null ? byId.get(cur.parent_id) : undefined;
+  }
+  return path;
+}
+
 /** 폴더 id와 그 하위 폴더 전체 — "하위 폴더 포함" 필터링용. */
 export function descendantIds(folderId: number, folders: Folder[]): Set<number> {
   const childrenOf = new Map<number, number[]>();
@@ -73,10 +86,15 @@ export function FolderTree({
 }) {
   const tree = buildTree(folders);
   return (
-    <div className="rounded-xl border border-border bg-canvas p-3">
+    <div className="p-3">
       <div className="mb-2 flex items-center justify-between px-1">
         <span className="text-xs font-semibold text-ink-muted">폴더</span>
-        <button type="button" onClick={onNew} className="text-sm text-primary hover:underline" aria-label="새 폴더">
+        <button
+          type="button"
+          onClick={onNew}
+          className="text-sm text-ink-muted hover:text-ink hover:underline"
+          aria-label="새 폴더"
+        >
           ＋
         </button>
       </div>
@@ -162,7 +180,7 @@ function FolderRow({
   return (
     <div
       className={`group flex items-center rounded-md transition-colors ${
-        active ? "bg-primary-soft" : "hover:bg-surface"
+        active ? "bg-ink" : "hover:bg-surface"
       }`}
     >
       <button
@@ -170,7 +188,7 @@ function FolderRow({
         onClick={onClick}
         style={{ paddingLeft: 8 + depth * 14 }}
         className={`flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pr-1 text-left text-sm ${
-          active ? "font-medium text-primary" : "text-ink-muted group-hover:text-ink"
+          active ? "font-medium text-white" : "text-ink-muted group-hover:text-ink"
         }`}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0">
@@ -185,7 +203,9 @@ function FolderRow({
               type="button"
               onClick={onRename}
               aria-label="이름 변경"
-              className="rounded p-1 text-ink-muted hover:text-ink"
+              className={`rounded p-1 ${
+                active ? "text-white/70 hover:text-white" : "text-ink-muted hover:text-ink"
+              }`}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
@@ -197,7 +217,9 @@ function FolderRow({
               type="button"
               onClick={onDelete}
               aria-label="폴더 삭제"
-              className="rounded p-1 text-ink-muted hover:text-primary"
+              className={`rounded p-1 ${
+                active ? "text-white/70 hover:text-primary-soft" : "text-ink-muted hover:text-primary"
+              }`}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14" />
