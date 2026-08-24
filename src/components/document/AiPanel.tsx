@@ -5,12 +5,17 @@ import { proofread, listAnalyses, getAnalysis, setFindingStatus, applyAnalysis }
 import { listVersions } from "@/lib/versions";
 import { ApiError, errorMessage } from "@/lib/api";
 import type { ApplyAnalysisResult, DocumentVersion, FindingStatus, ProofreadResult } from "@/lib/types";
-import { Button, FOCUS_RING, StatusBadge } from "@/components/ui/primitives";
+import {
+  Button,
+  FOCUS_RING,
+  StatusBadge,
+  ProofreadCategoryBadge,
+  proofreadCategoryLabel,
+} from "@/components/ui/primitives";
 import { DiffModal } from "@/components/document/DiffModal";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/* AI 모듈 탭 — 지금은 오타 검증만 백엔드에 연동됨. */
 const tabs = [
   { key: "proofread", label: "오타 검증" },
   { key: "validation", label: "규정 검증" },
@@ -20,17 +25,6 @@ const tabs = [
 
 type TabKey = (typeof tabs)[number]["key"];
 
-const CATEGORY: Record<string, { label: string; className: string }> = {
-  spelling: { label: "맞춤법", className: "bg-violet-50 text-violet-700" },
-  spacing: { label: "띄어쓰기", className: "bg-sky-50 text-sky-700" },
-  grammar: { label: "문법", className: "bg-emerald-50 text-emerald-700" },
-  expression: { label: "표현", className: "bg-surface-2 text-ink-muted" },
-};
-function cat(c: string) {
-  return CATEGORY[c] ?? { label: c, className: "bg-surface-2 text-ink-muted" };
-}
-
-/** 아직 파싱이 끝나지 않은 상태 — 이때 오타 검증을 실행하면 409가 난다. */
 const NOT_READY = ["UPLOADED", "PARSING"];
 
 export function AiPanel({
@@ -107,6 +101,7 @@ function ProofreadPanel({
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyAnalysisResult | null>(null);
   const [appliedAnalysisId, setAppliedAnalysisId] = useState<number | null>(null);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const ready = !NOT_READY.includes(status);
   // 진행 중인 폴링 루프를 취소하기 위한 토큰.
   const pollRef = useRef<{ cancelled: boolean } | null>(null);
@@ -203,6 +198,31 @@ function ProofreadPanel({
     }
   }
 
+  async function updateAllFindings(next: FindingStatus) {
+    if (!result) return;
+    const targets = result.findings.filter((f) => f.status !== next);
+    if (targets.length === 0) return;
+    const prev = result;
+    setResult({
+      ...result,
+      findings: result.findings.map((f) => (f.status !== next ? { ...f, status: next } : f)),
+    });
+    setBulkUpdating(true);
+    setError(null);
+    try {
+      let latest = result;
+      for (const f of targets) {
+        latest = await setFindingStatus(docId, result.id, f.id, next);
+      }
+      setResult(latest);
+    } catch (e) {
+      setResult(prev);
+      setError(errorMessage(e, "상태 변경에 실패했습니다."));
+    } finally {
+      setBulkUpdating(false);
+    }
+  }
+
   async function apply() {
     if (!result) return;
     setApplying(true);
@@ -265,15 +285,33 @@ function ProofreadPanel({
           <p className="pt-8 text-center text-sm text-ink-muted">발견된 문제가 없습니다</p>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              {Object.entries(counts).map(([c, n]) => (
-                <span key={c} className={`rounded-full px-2.5 py-0.5 font-medium ${cat(c).className}`}>
-                  {cat(c).label} {n}
-                </span>
-              ))}
-              <span className="ml-auto text-ink-muted">
-                {result.provider === "openai" ? "GPT" : "규칙기반"} · 섹션 {result.sections_scanned}개
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-ink-muted">
+                {Object.entries(counts)
+                  .map(([c, n]) => `${proofreadCategoryLabel(c)} ${n}`)
+                  .join(" · ")}
               </span>
+
+              {!applyLocked && (
+                <div className="ml-auto flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={bulkUpdating || result.findings.every((f) => f.status === "accepted")}
+                    onClick={() => updateAllFindings("accepted")}
+                    className={`rounded-full border border-border px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`}
+                  >
+                    전체 승인
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkUpdating || result.findings.every((f) => f.status === "pending")}
+                    onClick={() => updateAllFindings("pending")}
+                    className={`rounded-full border border-border px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`}
+                  >
+                    전체 선택 해제
+                  </button>
+                </div>
+              )}
             </div>
 
             {applyLocked ? (
@@ -331,13 +369,7 @@ function ProofreadPanel({
                     }`}
                   >
                     <div className="mb-1 flex items-center gap-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          cat(f.category).className
-                        }`}
-                      >
-                        {cat(f.category).label}
-                      </span>
+                      <ProofreadCategoryBadge category={f.category} />
                       {f.page_start != null && (
                         <span className="font-mono text-xs text-ink-muted">p.{f.page_start}</span>
                       )}
@@ -361,7 +393,7 @@ function ProofreadPanel({
                     <div className="mt-2 flex items-center gap-1.5">
                       <button
                         type="button"
-                        disabled={applyLocked}
+                        disabled={applyLocked || bulkUpdating}
                         onClick={() => updateFinding(f.id, f.status === "accepted" ? "pending" : "accepted")}
                         className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                           f.status === "accepted"
@@ -373,7 +405,7 @@ function ProofreadPanel({
                       </button>
                       <button
                         type="button"
-                        disabled={applyLocked}
+                        disabled={applyLocked || bulkUpdating}
                         onClick={() => updateFinding(f.id, f.status === "rejected" ? "pending" : "rejected")}
                         className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                           f.status === "rejected"

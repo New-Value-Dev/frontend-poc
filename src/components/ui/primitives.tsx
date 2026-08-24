@@ -305,6 +305,31 @@ export function NotificationTypeBadge({ type }: { type: NotificationType | strin
   );
 }
 
+/* 오타 검증(Proofread) finding의 category — 백엔드 자유 문자열이라 알려진 값만 라벨/색을 매핑한다. */
+const PROOFREAD_CATEGORY_STYLES: Record<string, { label: string; className: string }> = {
+  spelling: { label: "맞춤법", className: "bg-violet-50 text-violet-700" },
+  spacing: { label: "띄어쓰기", className: "bg-sky-50 text-sky-700" },
+  grammar: { label: "문법", className: "bg-emerald-50 text-emerald-700" },
+  expression: { label: "표현", className: "bg-surface-2 text-ink-muted" },
+};
+
+export function proofreadCategoryLabel(category: string): string {
+  return PROOFREAD_CATEGORY_STYLES[category]?.label ?? category;
+}
+
+export function ProofreadCategoryBadge({ category }: { category: string }) {
+  const known = PROOFREAD_CATEGORY_STYLES[category];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+        known?.className ?? "bg-surface-2 text-ink-muted"
+      }`}
+    >
+      {known?.label ?? category}
+    </span>
+  );
+}
+
 export function Tag({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center rounded-full bg-surface-2 px-2.5 py-0.5 text-xs text-ink-muted">

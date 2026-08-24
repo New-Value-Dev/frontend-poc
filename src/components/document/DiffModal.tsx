@@ -20,23 +20,33 @@ function sideTokens(tokens: DiffToken[], side: "from" | "to") {
   return tokens.filter((t) => t.op === "equal" || t.op === keep);
 }
 
-function TokenText({ tokens, side }: { tokens: DiffToken[]; side: "from" | "to" }) {
+function TokenText({
+  tokens,
+  side,
+  registerChangeRef,
+}: {
+  tokens: DiffToken[];
+  side: "from" | "to";
+  registerChangeRef?: (el: HTMLSpanElement | null) => void;
+}) {
   const kept = sideTokens(tokens, side);
   if (kept.length === 0) return <span className="text-ink-muted">—</span>;
+  const firstChangeIndex = kept.findIndex((t) => t.op !== "equal");
   return (
     <>
-      {kept.map((t, i) =>
-        t.op === "equal" ? (
-          <span key={i}>{t.text}</span>
-        ) : (
+      {kept.map((t, i) => {
+        if (t.op === "equal") return <span key={i}>{t.text}</span>;
+        const isFirstChange = registerChangeRef != null && i === firstChangeIndex;
+        return (
           <span
             key={i}
+            ref={isFirstChange ? registerChangeRef : undefined}
             className={t.op === "delete" ? "bg-primary-soft text-primary" : "bg-emerald-100 text-emerald-800"}
           >
             {t.text}
           </span>
-        ),
-      )}
+        );
+      })}
     </>
   );
 }
@@ -45,13 +55,17 @@ function SectionRow({
   section,
   focused,
   registerRef,
+  registerChangeRef,
 }: {
   section: SectionDiff;
   focused: boolean;
   registerRef: (el: HTMLDivElement | null) => void;
+  registerChangeRef: (el: HTMLElement | null) => void;
 }) {
   const fromEmpty = section.op === "added";
   const toEmpty = section.op === "deleted";
+  // modified/added 섹션은 "이후" 쪽 삽입 토큰을, deleted 섹션은 "이전" 쪽 삭제 토큰을 스크롤 기준점으로 삼는다.
+  const changeSide: "from" | "to" = section.op === "deleted" ? "from" : "to";
   return (
     <div
       ref={registerRef}
@@ -67,7 +81,11 @@ function SectionRow({
         {!fromEmpty && section.title && (
           <p className="mb-1 text-xs font-semibold text-ink-muted">{section.title}</p>
         )}
-        <TokenText tokens={section.tokens} side="from" />
+        <TokenText
+          tokens={section.tokens}
+          side="from"
+          registerChangeRef={changeSide === "from" ? registerChangeRef : undefined}
+        />
       </div>
       <div
         className={`whitespace-pre-wrap bg-canvas p-3 text-sm leading-relaxed ${
@@ -77,7 +95,11 @@ function SectionRow({
         {!toEmpty && section.title && (
           <p className="mb-1 text-xs font-semibold text-ink-muted">{section.title}</p>
         )}
-        <TokenText tokens={section.tokens} side="to" />
+        <TokenText
+          tokens={section.tokens}
+          side="to"
+          registerChangeRef={changeSide === "to" ? registerChangeRef : undefined}
+        />
       </div>
     </div>
   );
@@ -102,6 +124,7 @@ export function DiffModal({
   const [activeOps, setActiveOps] = useState<Set<ChangeOp>>(new Set(["added", "deleted", "modified"]));
   const [focusPos, setFocusPos] = useState(-1); // changeIndices 안에서의 위치
   const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const changeRefs = useRef<Record<number, HTMLElement | null>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -147,7 +170,9 @@ export function DiffModal({
     if (changeIndices.length === 0) return;
     const next = focusPos === -1 ? 0 : (focusPos + delta + changeIndices.length) % changeIndices.length;
     setFocusPos(next);
-    sectionRefs.current[changeIndices[next]]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const sectionIndex = changeIndices[next];
+    const target = changeRefs.current[sectionIndex] ?? sectionRefs.current[sectionIndex];
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   const focusedSectionIndex = focusPos === -1 ? -1 : changeIndices[focusPos];
@@ -235,6 +260,9 @@ export function DiffModal({
                   focused={i === focusedSectionIndex}
                   registerRef={(el) => {
                     sectionRefs.current[i] = el;
+                  }}
+                  registerChangeRef={(el) => {
+                    changeRefs.current[i] = el;
                   }}
                 />
               ))

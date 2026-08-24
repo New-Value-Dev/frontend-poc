@@ -22,7 +22,14 @@ const nav: NavItem[] = [
     icon: <IconFolder />,
     match: (p) => p.startsWith("/projects") || p.startsWith("/documents"),
   },
-  { href: "/search", label: "RAG 검색", icon: <IconChat />, match: (p) => p.startsWith("/search") },
+  {
+    href: "/proofread",
+    label: "맞춤법 검사기",
+    icon: <IconPencil />,
+    match: (p) => p.startsWith("/proofread"),
+  },
+  { href: "/search", label: "RAG", icon: <IconChat />, match: (p) => p.startsWith("/search") },
+  { href: "/quiz", label: "퀴즈", icon: <IconQuiz />, match: (p) => p.startsWith("/quiz") },
 ];
 
 const adminNav: NavItem[] = [
@@ -160,6 +167,23 @@ function IconBeaker() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3" />
+    </svg>
+  );
+}
+function IconPencil() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </svg>
+  );
+}
+function IconQuiz() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1.3 1.1-1.3 1.9V14" />
+      <circle cx="12" cy="17.5" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="9" />
     </svg>
   );
 }
