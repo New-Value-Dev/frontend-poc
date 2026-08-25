@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import type { DocStatus } from "@/lib/types";
+import type { DocStatus, MemberStatus, NotificationType, Visibility } from "@/lib/types";
 
 export type { DocStatus };
 
@@ -38,17 +38,22 @@ export function ErrorBanner({
 
 export function PageHeader({
   title,
+  titleBadge,
   description,
   actions,
 }: {
   title: string;
+  titleBadge?: ReactNode;
   description?: string;
   actions?: ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+          {titleBadge}
+        </div>
         {description && (
           <p className="mt-1 text-sm leading-relaxed text-ink-muted">{description}</p>
         )}
@@ -224,6 +229,103 @@ export function StatusBadge({ status }: { status: DocStatus | string }) {
       }`}
     >
       {known?.label ?? status}
+    </span>
+  );
+}
+
+const VISIBILITY_STYLES: Record<Visibility, { label: string; tone: StatusTone }> = {
+  public: { label: "공개", tone: "done" },
+  invite: { label: "초대", tone: "active" },
+  private: { label: "비공개", tone: "idle" },
+};
+
+export function visibilityLabel(visibility: Visibility | string): string {
+  return VISIBILITY_STYLES[visibility as Visibility]?.label ?? visibility;
+}
+
+export function VisibilityBadge({ visibility }: { visibility: Visibility | string }) {
+  const known = VISIBILITY_STYLES[visibility as Visibility];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        TONE_STYLES[known?.tone ?? "idle"]
+      }`}
+    >
+      {known?.label ?? visibility}
+    </span>
+  );
+}
+
+const MEMBER_STATUS_STYLES: Record<MemberStatus, { label: string; tone: StatusTone }> = {
+  pending: { label: "수락 대기중", tone: "active" },
+  active: { label: "참여 중", tone: "done" },
+  rejected: { label: "거절함", tone: "fail" },
+};
+
+export function memberStatusLabel(status: MemberStatus | string): string {
+  return MEMBER_STATUS_STYLES[status as MemberStatus]?.label ?? status;
+}
+
+export function MemberStatusBadge({ status }: { status: MemberStatus | string }) {
+  const known = MEMBER_STATUS_STYLES[status as MemberStatus];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        TONE_STYLES[known?.tone ?? "idle"]
+      }`}
+    >
+      {known?.label ?? status}
+    </span>
+  );
+}
+
+const NOTIFICATION_STYLES: Record<NotificationType, { label: string; tone: StatusTone }> = {
+  "project.invite": { label: "초대", tone: "active" },
+  "project.invite_accepted": { label: "수락", tone: "done" },
+  "project.invite_declined": { label: "거절", tone: "idle" },
+  "project.member_removed": { label: "멤버", tone: "idle" },
+  "analysis.complete": { label: "분석 완료", tone: "done" },
+  "analysis.fail": { label: "분석 실패", tone: "fail" },
+};
+
+export function notificationTypeLabel(type: NotificationType | string): string {
+  return NOTIFICATION_STYLES[type as NotificationType]?.label ?? type;
+}
+
+export function NotificationTypeBadge({ type }: { type: NotificationType | string }) {
+  const known = NOTIFICATION_STYLES[type as NotificationType];
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+        TONE_STYLES[known?.tone ?? "idle"]
+      }`}
+    >
+      {known?.label ?? type}
+    </span>
+  );
+}
+
+/* 오타 검증(Proofread) finding의 category — 백엔드 자유 문자열이라 알려진 값만 라벨/색을 매핑한다. */
+const PROOFREAD_CATEGORY_STYLES: Record<string, { label: string; className: string }> = {
+  spelling: { label: "맞춤법", className: "bg-violet-50 text-violet-700" },
+  spacing: { label: "띄어쓰기", className: "bg-sky-50 text-sky-700" },
+  grammar: { label: "문법", className: "bg-emerald-50 text-emerald-700" },
+  expression: { label: "표현", className: "bg-surface-2 text-ink-muted" },
+};
+
+export function proofreadCategoryLabel(category: string): string {
+  return PROOFREAD_CATEGORY_STYLES[category]?.label ?? category;
+}
+
+export function ProofreadCategoryBadge({ category }: { category: string }) {
+  const known = PROOFREAD_CATEGORY_STYLES[category];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+        known?.className ?? "bg-surface-2 text-ink-muted"
+      }`}
+    >
+      {known?.label ?? category}
     </span>
   );
 }

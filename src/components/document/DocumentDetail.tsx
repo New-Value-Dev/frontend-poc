@@ -289,7 +289,7 @@ export function DocumentDetail({ docId }: { docId: string }) {
   }
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-full">
+    <div className="mx-auto flex max-w-7xl flex-col gap-4 xl:h-full">
       {/* 헤더 */}
       <div className="flex flex-col gap-3">
         <BackLink href={`/projects/${doc.project_id}`}>
@@ -320,8 +320,8 @@ export function DocumentDetail({ docId }: { docId: string }) {
 
       {error && <ErrorBanner message={error} needLogin={needLogin} />}
 
-      {/* lg 미만에서는 메타데이터/개요가 사라지지 않도록 접이식 패널로 노출한다 (뷰어 위, 페이지 스크롤에 포함). */}
-      <details className="group rounded-panel border border-border bg-canvas lg:hidden">
+      {/* xl 미만에서는 메타데이터/개요가 사라지지 않도록 접이식 패널로 노출한다 (뷰어 위, 페이지 스크롤에 포함). */}
+      <details className="group rounded-panel border border-border bg-canvas xl:hidden">
         <summary
           className={`flex cursor-pointer list-none items-center justify-between rounded-panel px-4 py-3 text-sm font-medium text-ink ${FOCUS_RING}`}
         >
@@ -339,10 +339,10 @@ export function DocumentDetail({ docId }: { docId: string }) {
         </div>
       </details>
 
-      {/* 3분할: 아웃라인 · 뷰어 · AI 패널 — lg 미만에서는 각자 스크롤 대신 페이지 전체가 스크롤된다 */}
-      <div className="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[200px_1fr_380px]">
-        {/* 상단은 메타데이터(항상 표시) · 아래는 스크롤되는 아웃라인 — lg 이상 전용, 모바일은 위 접이식 패널로 대체 */}
-        <div className="hidden min-h-0 flex-col gap-4 lg:flex">
+      {/* 3분할: 아웃라인 · 뷰어 · AI 패널 — xl 미만에서는 각자 스크롤 대신 페이지 전체가 스크롤된다 */}
+      <div className="grid grid-cols-1 gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[200px_1fr_380px]">
+        {/* 상단은 메타데이터(항상 표시) · 아래는 스크롤되는 아웃라인 — xl 이상 전용, 그 아래는 위 접이식 패널로 대체 */}
+        <div className="hidden min-h-0 flex-col gap-4 xl:flex">
           <div className="shrink-0 rounded-panel border border-border bg-canvas p-4">{metaBody}</div>
 
           <div className="flex min-h-0 flex-1 flex-col rounded-panel border border-border bg-canvas p-4">
@@ -351,8 +351,8 @@ export function DocumentDetail({ docId }: { docId: string }) {
           </div>
         </div>
 
-        {/* 뷰어 — lg 미만에서는 페이지 전체가 무한정 길어지지 않도록 자체 높이 상한 + 스크롤을 둔다 */}
-        <div className="max-h-[65vh] overflow-y-auto rounded-panel border border-border bg-canvas p-4 sm:p-8 lg:max-h-none lg:min-h-0">
+        {/* 뷰어 — xl 미만에서는 페이지 전체가 무한정 길어지지 않도록 자체 높이 상한 + 스크롤을 둔다 */}
+        <div className="max-h-[65vh] overflow-y-auto rounded-panel border border-border bg-canvas p-4 sm:p-8 xl:max-h-none xl:min-h-0">
           {ordered.length === 0 ? (
             <div className="grid h-full place-items-center py-16 text-center">
               <div>
@@ -409,8 +409,8 @@ export function DocumentDetail({ docId }: { docId: string }) {
           )}
         </div>
 
-        {/* AI 패널 — 오타 검증만 연동됨, 나머지 모듈은 placeholder. lg 미만에서도 자체 스크롤이 되도록 높이를 고정한다 */}
-        <div className="h-[65vh] overflow-hidden rounded-panel border border-border bg-canvas lg:h-auto lg:min-h-0">
+        {/* AI 패널 — 오타 검증만 연동됨, 나머지 모듈은 placeholder. xl 미만에서도 자체 스크롤이 되도록 높이를 고정한다 */}
+        <div className="h-[65vh] overflow-hidden rounded-panel border border-border bg-canvas xl:h-auto xl:min-h-0">
           <AiPanel
             docId={docId}
             status={status}
@@ -476,8 +476,8 @@ function DetailSkeleton() {
           <div className="ml-auto h-9 w-24 rounded-control bg-surface-2" />
         </div>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[200px_1fr_380px]">
-        <div className="hidden min-h-0 flex-col gap-4 lg:flex">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[200px_1fr_380px]">
+        <div className="hidden min-h-0 flex-col gap-4 xl:flex">
           <div className="h-[248px] shrink-0 rounded-panel border border-border bg-surface" />
           <div className="min-h-0 flex-1 rounded-panel border border-border bg-surface" />
         </div>

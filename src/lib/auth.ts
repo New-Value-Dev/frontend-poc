@@ -22,16 +22,20 @@ export function loginWith(provider: string) {
 }
 
 /** 현재 사용자 정보 (Bearer 토큰 필요). */
-export function getMe() {
-  return api.get<User>("/auth/me");
+export function getMe(timeoutMs?: number) {
+  return api.get<User>("/auth/me", { timeoutMs });
 }
+
+const BOOTSTRAP_TIMEOUT_MS = 8_000;
 
 /** refresh 쿠키로 새 access token을 발급받아 메모리에 저장. */
 export async function bootstrapSession(): Promise<User | null> {
   try {
-    const { access_token } = await api.post<TokenResponse>("/auth/token/refresh");
+    const { access_token } = await api.post<TokenResponse>("/auth/token/refresh", undefined, {
+      timeoutMs: BOOTSTRAP_TIMEOUT_MS,
+    });
     setAccessToken(access_token);
-    return await getMe();
+    return await getMe(BOOTSTRAP_TIMEOUT_MS);
   } catch {
     setAccessToken(null);
     return null;

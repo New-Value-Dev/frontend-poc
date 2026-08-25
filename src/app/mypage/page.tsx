@@ -16,6 +16,7 @@ import {
   ErrorBanner,
 } from "@/components/ui/primitives";
 import { ActivityFeed } from "@/components/activity/ActivityFeed";
+import { PushToggle } from "@/components/notifications/PushToggle";
 
 function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString("ko-KR") : "-";
@@ -117,6 +118,8 @@ export default function MyPage() {
         <StatCell label="처리 중" value={stats.processing} className="border-l border-border" />
       </Card>
 
+      <PushToggle />
+
       <Card>
         <CardHeader>
           <CardTitle>내 최근 활동</CardTitle>
@@ -163,6 +166,7 @@ function MyPageSkeleton() {
       </div>
       <div className="h-[236px] rounded-panel border border-border bg-surface" />
       <div className="h-[84px] rounded-panel border border-border bg-surface" />
+      <div className="h-[132px] rounded-panel border border-border bg-surface" />
       <div className="h-64 rounded-panel border border-border bg-surface" />
     </div>
   );

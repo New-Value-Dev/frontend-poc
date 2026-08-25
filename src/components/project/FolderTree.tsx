@@ -1,7 +1,9 @@
+import { useState, type DragEvent, type KeyboardEvent, type FocusEvent } from "react";
 import type { Folder } from "@/lib/types";
 
 type FolderNode = Folder & { children: FolderNode[] };
 
+/** 형제는 `rank` 오름차순으로 정렬한다 — 백엔드가 `/folders/{id}/reorder`로 부여하는 순서. */
 function buildTree(folders: Folder[]): FolderNode[] {
   const map = new Map<number, FolderNode>();
   folders.forEach((f) => map.set(f.id, { ...f, children: [] }));
@@ -12,7 +14,7 @@ function buildTree(folders: Folder[]): FolderNode[] {
     else roots.push(node);
   }
   const sort = (ns: FolderNode[]) => {
-    ns.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    ns.sort((a, b) => a.rank - b.rank);
     ns.forEach((n) => sort(n.children));
   };
   sort(roots);
@@ -69,6 +71,8 @@ export function descendantIds(folderId: number, folders: Folder[]): Set<number> 
   return set;
 }
 
+export const DOCUMENT_DRAG_TYPE = "application/x-document-id";
+
 export function FolderTree({
   folders,
   activeId,
@@ -76,15 +80,28 @@ export function FolderTree({
   onNew,
   onRename,
   onDelete,
+  onReorder,
+  onDropDocument,
 }: {
   folders: Folder[];
   activeId: number | null;
   onSelect: (id: number | null) => void;
   onNew: () => void;
-  onRename?: (f: Folder) => void;
+  onRename?: (f: Folder, name: string) => void;
   onDelete?: (f: Folder) => void;
+  onReorder?: (folderId: number, parentId: number | null, targetIndex: number) => void;
+  onDropDocument?: (documentId: number, folderId: number | null) => void;
 }) {
   const tree = buildTree(folders);
+  const [rootOver, setRootOver] = useState(false);
+
+  function readDocumentId(e: DragEvent): number | null {
+    if (!e.dataTransfer.types.includes(DOCUMENT_DRAG_TYPE)) return null;
+    const raw = e.dataTransfer.getData(DOCUMENT_DRAG_TYPE);
+    const id = Number(raw);
+    return Number.isFinite(id) ? id : null;
+  }
+
   return (
     <div className="p-3">
       <div className="mb-2 flex items-center justify-between px-1">
@@ -99,66 +116,160 @@ export function FolderTree({
         </button>
       </div>
       <ul className="flex flex-col gap-0.5">
-        <li>
+        <li
+          onDragOver={(e) => {
+            if (!onDropDocument || !e.dataTransfer.types.includes(DOCUMENT_DRAG_TYPE)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (!rootOver) setRootOver(true);
+          }}
+          onDragLeave={() => setRootOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setRootOver(false);
+            const docId = readDocumentId(e);
+            if (docId != null) onDropDocument?.(docId, null);
+          }}
+          className={rootOver ? "rounded-md ring-2 ring-inset ring-ink/30" : undefined}
+        >
           <FolderRow label="전체" active={activeId == null} depth={0} onClick={() => onSelect(null)} />
         </li>
-        {tree.map((n) => (
-          <FolderBranch
-            key={n.id}
-            node={n}
-            depth={0}
-            activeId={activeId}
-            onSelect={onSelect}
-            onRename={onRename}
-            onDelete={onDelete}
-          />
-        ))}
       </ul>
+      <FolderList
+        nodes={tree}
+        parentId={null}
+        depth={0}
+        activeId={activeId}
+        onSelect={onSelect}
+        onRename={onRename}
+        onDelete={onDelete}
+        onReorder={onReorder}
+        onDropDocument={onDropDocument}
+      />
     </div>
   );
 }
 
-function FolderBranch({
-  node,
+function FolderList({
+  nodes,
+  parentId,
   depth,
   activeId,
   onSelect,
   onRename,
   onDelete,
+  onReorder,
+  onDropDocument,
 }: {
-  node: FolderNode;
+  nodes: FolderNode[];
+  parentId: number | null;
   depth: number;
   activeId: number | null;
   onSelect: (id: number | null) => void;
-  onRename?: (f: Folder) => void;
+  onRename?: (f: Folder, name: string) => void;
   onDelete?: (f: Folder) => void;
+  onReorder?: (folderId: number, parentId: number | null, targetIndex: number) => void;
+  onDropDocument?: (documentId: number, folderId: number | null) => void;
 }) {
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  function handleFolderReorderDrop(targetId: number) {
+    if (onReorder && dragId != null && dragId !== targetId) {
+      const ids = nodes.map((n) => n.id);
+      const from = ids.indexOf(dragId);
+      const to = ids.indexOf(targetId);
+      if (from !== -1 && to !== -1) {
+        ids.splice(from, 1);
+        ids.splice(to, 0, dragId);
+        onReorder(dragId, parentId, ids.indexOf(dragId));
+      }
+    }
+    setDragId(null);
+    setOverId(null);
+  }
+
   return (
-    <li>
-      <FolderRow
-        label={node.name}
-        active={activeId === node.id}
-        depth={depth}
-        onClick={() => onSelect(node.id)}
-        onRename={onRename ? () => onRename(node) : undefined}
-        onDelete={onDelete ? () => onDelete(node) : undefined}
-      />
-      {node.children.length > 0 && (
-        <ul className="flex flex-col gap-0.5">
-          {node.children.map((c) => (
-            <FolderBranch
-              key={c.id}
-              node={c}
-              depth={depth + 1}
-              activeId={activeId}
-              onSelect={onSelect}
-              onRename={onRename}
-              onDelete={onDelete}
+    <ul className="flex flex-col gap-0.5">
+      {nodes.map((n) => {
+        const isDocDrag = (e: DragEvent) => e.dataTransfer.types.includes(DOCUMENT_DRAG_TYPE);
+        return (
+          <li
+            key={n.id}
+            draggable={!!onReorder && editingId !== n.id}
+            onDragStart={(e) => {
+              setDragId(n.id);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragOver={(e) => {
+              if (isDocDrag(e)) {
+                if (!onDropDocument) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (overId !== n.id) setOverId(n.id);
+                return;
+              }
+              if (!onReorder || dragId == null) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (overId !== n.id) setOverId(n.id);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (isDocDrag(e)) {
+                const raw = e.dataTransfer.getData(DOCUMENT_DRAG_TYPE);
+                const docId = Number(raw);
+                setOverId(null);
+                if (Number.isFinite(docId)) onDropDocument?.(docId, n.id);
+                return;
+              }
+              handleFolderReorderDrop(n.id);
+            }}
+            onDragEnd={() => {
+              setDragId(null);
+              setOverId(null);
+            }}
+            className={
+              overId === n.id && dragId !== n.id ? "rounded-md ring-2 ring-inset ring-ink/30" : undefined
+            }
+          >
+            <FolderRow
+              label={n.name}
+              active={activeId === n.id}
+              depth={depth}
+              draggable={!!onReorder && editingId !== n.id}
+              editing={editingId === n.id}
+              onClick={() => onSelect(n.id)}
+              onStartRename={onRename ? () => setEditingId(n.id) : undefined}
+              onCommitRename={
+                onRename
+                  ? (name) => {
+                      onRename(n, name);
+                      setEditingId(null);
+                    }
+                  : undefined
+              }
+              onCancelRename={() => setEditingId(null)}
+              onDelete={onDelete ? () => onDelete(n) : undefined}
             />
-          ))}
-        </ul>
-      )}
-    </li>
+            {n.children.length > 0 && (
+              <FolderList
+                nodes={n.children}
+                parentId={n.id}
+                depth={depth + 1}
+                activeId={activeId}
+                onSelect={onSelect}
+                onRename={onRename}
+                onDelete={onDelete}
+                onReorder={onReorder}
+                onDropDocument={onDropDocument}
+              />
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -166,42 +277,78 @@ function FolderRow({
   label,
   active,
   depth,
+  draggable,
+  editing,
   onClick,
-  onRename,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
   onDelete,
 }: {
   label: string;
   active: boolean;
   depth: number;
+  draggable?: boolean;
+  editing?: boolean;
   onClick: () => void;
-  onRename?: () => void;
+  onStartRename?: () => void;
+  onCommitRename?: (name: string) => void;
+  onCancelRename?: () => void;
   onDelete?: () => void;
 }) {
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.currentTarget.blur();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onCancelRename?.();
+    }
+  }
+
+  function handleBlur(e: FocusEvent<HTMLInputElement>) {
+    const next = e.currentTarget.value.trim();
+    if (next && next !== label) onCommitRename?.(next);
+    else onCancelRename?.();
+  }
+
   return (
     <div
       className={`group flex items-center rounded-md transition-colors ${
         active ? "bg-ink" : "hover:bg-surface"
-      }`}
+      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
     >
-      <button
-        type="button"
-        onClick={onClick}
-        style={{ paddingLeft: 8 + depth * 14 }}
-        className={`flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pr-1 text-left text-sm ${
-          active ? "font-medium text-white" : "text-ink-muted group-hover:text-ink"
-        }`}
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0">
-          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        </svg>
-        <span className="truncate">{label}</span>
-      </button>
-      {(onRename || onDelete) && (
+      {editing ? (
+        <input
+          autoFocus
+          defaultValue={label}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
+          aria-label="폴더 이름"
+          style={{ paddingLeft: 8 + depth * 14 }}
+          className="min-w-0 flex-1 rounded-md bg-canvas py-1.5 pr-1 text-left text-sm text-ink outline-none ring-1 ring-inset ring-primary/50"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onClick}
+          style={{ paddingLeft: 8 + depth * 14 }}
+          className={`flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pr-1 text-left text-sm ${
+            active ? "font-medium text-white" : "text-ink-muted group-hover:text-ink"
+          }`}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          </svg>
+          <span className="truncate">{label}</span>
+        </button>
+      )}
+      {!editing && (onStartRename || onDelete) && (
         <span className="hidden shrink-0 items-center gap-0.5 pr-1.5 group-hover:flex">
-          {onRename && (
+          {onStartRename && (
             <button
               type="button"
-              onClick={onRename}
+              onClick={onStartRename}
               aria-label="이름 변경"
               className={`rounded p-1 ${
                 active ? "text-white/70 hover:text-white" : "text-ink-muted hover:text-ink"

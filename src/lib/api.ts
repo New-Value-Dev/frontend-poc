@@ -45,11 +45,39 @@ export function errorMessage(e: unknown, fallback: string): string {
 
 const REFRESH_PATH = "/auth/token/refresh";
 
+export const DEFAULT_TIMEOUT_MS = 15_000;
+
+function abortAfter(ms: number, external?: AbortSignal | null) {
+  if (ms <= 0) return { signal: external ?? undefined, clear: () => {} };
+
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new DOMException("timeout", "TimeoutError")),
+    ms,
+  );
+  const onExternalAbort = () => controller.abort(external?.reason);
+  external?.addEventListener("abort", onExternalAbort, { once: true });
+
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timer);
+      external?.removeEventListener("abort", onExternalAbort);
+    },
+  };
+}
+
+function isTimeout(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "TimeoutError";
+}
+
 async function tryRefresh(): Promise<boolean> {
+  const { signal, clear } = abortAfter(DEFAULT_TIMEOUT_MS);
   try {
     const res = await fetch(`${BASE_URL}${REFRESH_PATH}`, {
       method: "POST",
       credentials: "include",
+      signal,
     });
     if (!res.ok) return false;
     const data = (await res.json()) as { access_token?: string };
@@ -60,6 +88,8 @@ async function tryRefresh(): Promise<boolean> {
     return false;
   } catch {
     return false;
+  } finally {
+    clear();
   }
 }
 
@@ -67,12 +97,13 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
   /** multipart/form-data 업로드 — body에 FormData를 넣고 이 값을 true로 설정 */
   form?: boolean;
+  timeoutMs?: number;
   /** 내부용: refresh 재귀 무한 반복 방지 */
   _retried?: boolean;
 };
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, form, _retried, headers, ...rest } = options;
+  const { body, form, timeoutMs, _retried, headers, signal, ...rest } = options;
 
   const finalHeaders = new Headers(headers);
   if (accessToken) finalHeaders.set("Authorization", `Bearer ${accessToken}`);
@@ -85,34 +116,45 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     payload = JSON.stringify(body);
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...rest,
-    headers: finalHeaders,
-    body: payload,
-    credentials: "include",
-  });
+  const limit = timeoutMs ?? (form ? 0 : DEFAULT_TIMEOUT_MS);
+  const { signal: abortSignal, clear } = abortAfter(limit, signal);
 
-  // 401 응답 시 (refresh 요청 자체는 제외) 토큰 갱신 후 한 번 재시도.
-  if (res.status === 401 && !_retried && path !== REFRESH_PATH) {
-    if (await tryRefresh()) {
-      return request<T>(path, { ...options, _retried: true });
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...rest,
+      headers: finalHeaders,
+      body: payload,
+      credentials: "include",
+      signal: abortSignal,
+    });
+
+    // 401 응답 시 (refresh 요청 자체는 제외) 토큰 갱신 후 한 번 재시도.
+    if (res.status === 401 && !_retried && path !== REFRESH_PATH) {
+      if (await tryRefresh()) return await request<T>(path, { ...options, _retried: true });
     }
-  }
 
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const data = (await res.json()) as { detail?: string };
-      if (data.detail) detail = data.detail;
-    } catch {
-      /* JSON이 아닌 에러 응답 */
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const data = (await res.json()) as { detail?: string };
+        if (data.detail) detail = data.detail;
+      } catch {
+        /* JSON이 아닌 에러 응답 */
+      }
+      throw new ApiError(res.status, detail);
     }
-    throw new ApiError(res.status, detail);
-  }
 
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
+  } catch (e) {
+    if (isTimeout(e)) {
+      throw new ApiError(408, "서버 응답이 없습니다. 네트워크 상태를 확인해 주세요.");
+    }
+    throw e;
+  } finally {
+    clear();
+  }
 }
 
 export const api = {

@@ -2,13 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { proofread, listAnalyses, getAnalysis, setFindingStatus, applyAnalysis } from "@/lib/ai";
+import { listVersions } from "@/lib/versions";
 import { ApiError, errorMessage } from "@/lib/api";
-import type { ApplyAnalysisResult, FindingStatus, ProofreadResult } from "@/lib/types";
-import { Button, FOCUS_RING } from "@/components/ui/primitives";
+import type { ApplyAnalysisResult, DocumentVersion, FindingStatus, ProofreadResult } from "@/lib/types";
+import {
+  Button,
+  FOCUS_RING,
+  StatusBadge,
+  ProofreadCategoryBadge,
+  proofreadCategoryLabel,
+} from "@/components/ui/primitives";
+import { DiffModal } from "@/components/document/DiffModal";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/* AI 모듈 탭 — 지금은 오타 검증만 백엔드에 연동됨. */
 const tabs = [
   { key: "proofread", label: "오타 검증" },
   { key: "validation", label: "규정 검증" },
@@ -18,17 +25,6 @@ const tabs = [
 
 type TabKey = (typeof tabs)[number]["key"];
 
-const CATEGORY: Record<string, { label: string; className: string }> = {
-  spelling: { label: "맞춤법", className: "bg-violet-50 text-violet-700" },
-  spacing: { label: "띄어쓰기", className: "bg-sky-50 text-sky-700" },
-  grammar: { label: "문법", className: "bg-emerald-50 text-emerald-700" },
-  expression: { label: "표현", className: "bg-surface-2 text-ink-muted" },
-};
-function cat(c: string) {
-  return CATEGORY[c] ?? { label: c, className: "bg-surface-2 text-ink-muted" };
-}
-
-/** 아직 파싱이 끝나지 않은 상태 — 이때 오타 검증을 실행하면 409가 난다. */
 const NOT_READY = ["UPLOADED", "PARSING"];
 
 export function AiPanel({
@@ -79,7 +75,7 @@ export function AiPanel({
           />
         )}
         {active === "validation" && <Placeholder title="규정 검증" desc="관련 RULE 문서를 검색해 GPT로 위반·주의 사항을 검증합니다. (준비 중)" />}
-        {active === "compare" && <Placeholder title="문서 비교" desc="다른 버전과 섹션을 매칭해 변경 사항을 요약합니다. (준비 중)" />}
+        {active === "compare" && <ComparePanel docId={docId} />}
         {active === "related" && <Placeholder title="관련 문서" desc="문서 임베딩 기반 유사도로 연관 문서를 추천합니다. (준비 중)" />}
       </div>
     </div>
@@ -105,6 +101,7 @@ function ProofreadPanel({
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyAnalysisResult | null>(null);
   const [appliedAnalysisId, setAppliedAnalysisId] = useState<number | null>(null);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const ready = !NOT_READY.includes(status);
   // 진행 중인 폴링 루프를 취소하기 위한 토큰.
   const pollRef = useRef<{ cancelled: boolean } | null>(null);
@@ -201,6 +198,31 @@ function ProofreadPanel({
     }
   }
 
+  async function updateAllFindings(next: FindingStatus) {
+    if (!result) return;
+    const targets = result.findings.filter((f) => f.status !== next);
+    if (targets.length === 0) return;
+    const prev = result;
+    setResult({
+      ...result,
+      findings: result.findings.map((f) => (f.status !== next ? { ...f, status: next } : f)),
+    });
+    setBulkUpdating(true);
+    setError(null);
+    try {
+      let latest = result;
+      for (const f of targets) {
+        latest = await setFindingStatus(docId, result.id, f.id, next);
+      }
+      setResult(latest);
+    } catch (e) {
+      setResult(prev);
+      setError(errorMessage(e, "상태 변경에 실패했습니다."));
+    } finally {
+      setBulkUpdating(false);
+    }
+  }
+
   async function apply() {
     if (!result) return;
     setApplying(true);
@@ -263,15 +285,33 @@ function ProofreadPanel({
           <p className="pt-8 text-center text-sm text-ink-muted">발견된 문제가 없습니다</p>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              {Object.entries(counts).map(([c, n]) => (
-                <span key={c} className={`rounded-full px-2.5 py-0.5 font-medium ${cat(c).className}`}>
-                  {cat(c).label} {n}
-                </span>
-              ))}
-              <span className="ml-auto text-ink-muted">
-                {result.provider?.startsWith("openai") ? "GPT" : "규칙기반"} · 섹션 {result.sections_scanned}개
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-ink-muted">
+                {Object.entries(counts)
+                  .map(([c, n]) => `${proofreadCategoryLabel(c)} ${n}`)
+                  .join(" · ")}
               </span>
+
+              {!applyLocked && (
+                <div className="ml-auto flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={bulkUpdating || result.findings.every((f) => f.status === "accepted")}
+                    onClick={() => updateAllFindings("accepted")}
+                    className={`rounded-full border border-border px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`}
+                  >
+                    전체 승인
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkUpdating || result.findings.every((f) => f.status === "pending")}
+                    onClick={() => updateAllFindings("pending")}
+                    className={`rounded-full border border-border px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`}
+                  >
+                    전체 선택 해제
+                  </button>
+                </div>
+              )}
             </div>
 
             {applyLocked ? (
@@ -329,13 +369,7 @@ function ProofreadPanel({
                     }`}
                   >
                     <div className="mb-1 flex items-center gap-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          cat(f.category).className
-                        }`}
-                      >
-                        {cat(f.category).label}
-                      </span>
+                      <ProofreadCategoryBadge category={f.category} />
                       {f.page_start != null && (
                         <span className="font-mono text-xs text-ink-muted">p.{f.page_start}</span>
                       )}
@@ -359,7 +393,7 @@ function ProofreadPanel({
                     <div className="mt-2 flex items-center gap-1.5">
                       <button
                         type="button"
-                        disabled={applyLocked}
+                        disabled={applyLocked || bulkUpdating}
                         onClick={() => updateFinding(f.id, f.status === "accepted" ? "pending" : "accepted")}
                         className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                           f.status === "accepted"
@@ -371,7 +405,7 @@ function ProofreadPanel({
                       </button>
                       <button
                         type="button"
-                        disabled={applyLocked}
+                        disabled={applyLocked || bulkUpdating}
                         onClick={() => updateFinding(f.id, f.status === "rejected" ? "pending" : "rejected")}
                         className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                           f.status === "rejected"
@@ -389,6 +423,95 @@ function ProofreadPanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ComparePanel({ docId }: { docId: string }) {
+  const [versions, setVersions] = useState<DocumentVersion[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [diffOpen, setDiffOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    listVersions(docId)
+      .then((list) => {
+        if (cancelled) return;
+        setVersions([...list].sort((a, b) => b.version_no - a.version_no));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e, "버전 목록을 불러오지 못했습니다."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [docId]);
+
+  function toggle(id: number) {
+    setSelected((prev) => {
+      if (prev.includes(id)) return prev.filter((v) => v !== id);
+      if (prev.length >= 2) return prev;
+      return [...prev, id];
+    });
+  }
+
+  const selectedVersions = (versions ?? []).filter((v) => selected.includes(v.id));
+  const ordered = [...selectedVersions].sort((a, b) => a.version_no - b.version_no);
+  const canCompare = ordered.length === 2;
+
+  return (
+    <div className="flex h-full flex-col p-4">
+      {error && <p className="mb-2 text-sm text-primary">{error}</p>}
+
+      {!versions ? (
+        <p className="pt-8 text-center text-sm text-ink-muted">불러오는 중…</p>
+      ) : versions.length < 2 ? (
+        <p className="pt-8 text-center text-sm text-ink-muted">비교할 버전이 아직 2개 이상 없습니다.</p>
+      ) : (
+        <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+          {versions.map((v) => {
+            const checked = selected.includes(v.id);
+            const disabled = !checked && selected.length >= 2;
+            return (
+              <li key={v.id}>
+                <label
+                  className={`flex items-center gap-2 rounded-control border p-2.5 text-sm transition-colors ${
+                    checked ? "border-primary/40 bg-primary-soft/30" : "border-border"
+                  } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-surface"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={() => toggle(v.id)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <span className="font-medium text-ink">V{v.version_no}</span>
+                  <StatusBadge status={v.processing_status} />
+                  <span className="ml-auto shrink-0 text-xs text-ink-muted">
+                    {new Date(v.created_at).toLocaleString("ko-KR")}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <Button onClick={() => setDiffOpen(true)} disabled={!canCompare} className="mt-3 w-full justify-center py-2.5">
+        선택한 버전 비교
+      </Button>
+
+      {canCompare && (
+        <DiffModal
+          open={diffOpen}
+          onClose={() => setDiffOpen(false)}
+          docId={docId}
+          fromVersionId={ordered[0].id}
+          toVersionId={ordered[1].id}
+        />
+      )}
     </div>
   );
 }

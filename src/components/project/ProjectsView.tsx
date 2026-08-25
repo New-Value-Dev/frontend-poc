@@ -4,13 +4,34 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { listProjects, createProject, deleteProject } from "@/lib/projects";
 import { errorMessage, isAuthError } from "@/lib/api";
-import type { Project } from "@/lib/types";
-import { PageHeader, Card, Button, ErrorBanner, Field, Input, BackLink } from "@/components/ui/primitives";
+import type { Project, Visibility } from "@/lib/types";
+import {
+  PageHeader,
+  Card,
+  Button,
+  ErrorBanner,
+  Field,
+  Input,
+  BackLink,
+  VisibilityBadge,
+} from "@/components/ui/primitives";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
 import { LinkIconTile } from "@/components/ui/IconTile";
 import { IconMenu } from "@/components/ui/IconMenu";
 import { FolderTileIcon } from "@/components/ui/icons/FileTypeIcon";
+import { ProjectMembersDialog } from "./ProjectMembersDialog";
+import { ProjectInvitations } from "./ProjectInvitations";
 import { useAuth } from "@/components/auth/AuthProvider";
+
+const VISIBILITY_OPTIONS: { value: Visibility; label: string; hint: string }[] = [
+  { value: "public", label: "공개", hint: "로그인한 모든 사용자가 볼 수 있습니다." },
+  {
+    value: "invite",
+    label: "초대",
+    hint: "초대를 수락한 멤버만 볼 수 있습니다. 생성 후 타일 메뉴의 “멤버 · 공개 범위”에서 초대하세요.",
+  },
+  { value: "private", label: "비공개", hint: "나만 볼 수 있습니다." },
+];
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("ko-KR", {
@@ -31,12 +52,19 @@ export function ProjectsView() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [visibility, setVisibility] = useState<Visibility>("public");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [infoTarget, setInfoTarget] = useState<Project | null>(null);
+  const [membersTarget, setMembersTarget] = useState<Project | null>(null);
+
+  const { user, loading: authLoading } = useAuth();
+  function isOwner(p: Project) {
+    return user?.role === "admin" || p.owner_id === user?.id;
+  }
 
   async function load() {
     setLoading(true);
@@ -52,8 +80,6 @@ export function ProjectsView() {
     }
   }
 
-  const { loading: authLoading } = useAuth();
-
   // 인증 세션(access token) 확인 후에 fetch해서, 새로고침 시 토큰 갱신과 경합해
   // "로그인 필요"가 잘못 깜빡이지 않게 한다.
   useEffect(() => {
@@ -65,6 +91,7 @@ export function ProjectsView() {
   function openForm() {
     setName("");
     setDescription("");
+    setVisibility("public");
     setFormError(null);
     setShowForm(true);
   }
@@ -78,6 +105,7 @@ export function ProjectsView() {
       const created = await createProject({
         name: name.trim(),
         description: description.trim() || undefined,
+        visibility,
       });
       setProjects((prev) => [created, ...prev]);
       setShowForm(false);
@@ -124,6 +152,14 @@ export function ProjectsView() {
       </div>
 
       {error && <ErrorBanner message={error} needLogin={needLogin} />}
+
+      <ProjectInvitations
+        onAccepted={(project) =>
+          setProjects((prev) =>
+            prev.some((p) => p.id === project.id) ? prev : [project, ...prev],
+          )
+        }
+      />
 
       {/* 파인더 창: 페이지 남은 공간을 꽉 채우고, 목록만 내부에서 스크롤된다 */}
       <Card className="flex min-h-[420px] flex-1 flex-col overflow-hidden">
@@ -186,12 +222,27 @@ export function ProjectsView() {
                     href={`/projects/${p.id}`}
                     icon={<FolderTileIcon size={44} />}
                     label={p.name}
+                    sublabel={<VisibilityBadge visibility={p.visibility} />}
                     menu={
                       <IconMenu
                         ariaLabel={`${p.name} 프로젝트 메뉴`}
                         items={[
                           { key: "info", label: "정보", onSelect: () => setInfoTarget(p) },
-                          { key: "delete", label: "삭제", tone: "danger", onSelect: () => setDeleteTarget(p) },
+                          {
+                            key: "members",
+                            label: "멤버 · 공개 범위",
+                            onSelect: () => setMembersTarget(p),
+                          },
+                          ...(isOwner(p)
+                            ? [
+                                {
+                                  key: "delete",
+                                  label: "삭제",
+                                  tone: "danger" as const,
+                                  onSelect: () => setDeleteTarget(p),
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     }
@@ -227,6 +278,29 @@ export function ProjectsView() {
               placeholder="이 프로젝트가 다루는 문서를 한 줄로"
             />
           </Field>
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-ink">공개 범위</p>
+            <div className="flex gap-2">
+              {VISIBILITY_OPTIONS.map((opt) => (
+                <label
+                  key={opt.value}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-control border border-border px-2 py-2 text-sm has-[:checked]:border-ink has-[:checked]:bg-surface"
+                >
+                  <input
+                    type="radio"
+                    name="new-project-visibility"
+                    className="sr-only"
+                    checked={visibility === opt.value}
+                    onChange={() => setVisibility(opt.value)}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-ink-muted">
+              {VISIBILITY_OPTIONS.find((o) => o.value === visibility)?.hint}
+            </p>
+          </div>
           {formError && <ErrorBanner message={formError} needLogin={needLogin} />}
           <div className="mt-1 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowForm(false)}>
@@ -260,11 +334,25 @@ export function ProjectsView() {
             <dd className="text-ink">{infoTarget.name}</dd>
             <dt className="text-ink-muted">설명</dt>
             <dd className="text-ink">{infoTarget.description || "설명 없음"}</dd>
+            <dt className="text-ink-muted">공개 범위</dt>
+            <dd className="text-ink">
+              <VisibilityBadge visibility={infoTarget.visibility} />
+            </dd>
             <dt className="text-ink-muted">생성일</dt>
             <dd className="text-ink">{fmtDate(infoTarget.created_at)}</dd>
           </dl>
         )}
       </Modal>
+
+      <ProjectMembersDialog
+        project={membersTarget}
+        isOwner={membersTarget ? isOwner(membersTarget) : false}
+        onClose={() => setMembersTarget(null)}
+        onVisibilityChanged={(updated) => {
+          setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+          setMembersTarget(updated);
+        }}
+      />
     </div>
   );
 }
