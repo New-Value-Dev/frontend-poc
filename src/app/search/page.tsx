@@ -1,81 +1,165 @@
-const scopes = ["내부통제", "개인정보보호", "사업본부", "R&D"];
+"use client";
 
-const sources = [
-  { name: "개인정보처리지침.hwpx", loc: "제14조", score: "94%" },
-  { name: "8월 시각화팀.docx", loc: "개인정보 관련 안건", score: "88%" },
-  { name: "운영매뉴얼.pdf", loc: "파기 절차", score: "81%" },
-];
+import { useEffect, useState } from "react";
+import { errorMessage } from "@/lib/api";
+import { listProjects } from "@/lib/projects";
+import { query as ragQuery } from "@/lib/rag";
+import type { CitationRead, Project } from "@/lib/types";
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  text: string;
+  citations?: CitationRead[];
+  isError?: boolean;
+};
+
+function citationLocation(c: CitationRead): string | null {
+  if (c.page_start == null) return null;
+  return c.page_end != null && c.page_end !== c.page_start
+    ? `p.${c.page_start}-${c.page_end}`
+    : `p.${c.page_start}`;
+}
 
 export default function RagSearchPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    listProjects()
+      .then(setProjects)
+      .catch(() => {});
+  }, []);
+
+  function toggleProject(id: number) {
+    setSelectedProjectIds((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id],
+    );
+  }
+
+  async function send() {
+    const question = input.trim();
+    if (!question || sending) return;
+
+    setMessages((prev) => [...prev, { role: "user", text: question }]);
+    setInput("");
+    setSending(true);
+    try {
+      const res = await ragQuery(question, {
+        project_ids: selectedProjectIds.length ? selectedProjectIds : undefined,
+      });
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: res.answer, citations: res.citations },
+      ]);
+    } catch (e) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: errorMessage(e, "답변을 가져오지 못했습니다."), isError: true },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <div className="mx-auto grid h-full max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[220px_1fr]">
       {/* 검색 범위 */}
       <aside className="rounded-xl border border-border bg-canvas p-4">
         <h2 className="text-sm font-semibold text-ink">검색 범위</h2>
         <ul className="mt-3 flex flex-col gap-1">
-          {scopes.map((s, i) => (
-            <li key={s}>
+          {projects.map((p) => (
+            <li key={p.id}>
               <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-ink hover:bg-surface">
                 <input
                   type="checkbox"
-                  defaultChecked={i === 0}
+                  checked={selectedProjectIds.includes(p.id)}
+                  onChange={() => toggleProject(p.id)}
                   className="h-4 w-4 accent-[var(--color-primary)]"
                 />
-                {s}
+                {p.name}
               </label>
             </li>
           ))}
+          {projects.length === 0 && (
+            <li className="px-2 py-1.5 text-xs text-ink-muted">프로젝트가 없습니다</li>
+          )}
         </ul>
         <p className="mt-4 border-t border-border pt-3 text-xs text-ink-muted">
-          Hybrid: Vector + Full-text 검색
+          Vector 검색 · 범위를 선택 안 하면 전체 프로젝트 대상
         </p>
       </aside>
 
       {/* 채팅 / 답변 영역 */}
       <section className="flex min-h-0 flex-col rounded-xl border border-border bg-canvas">
         <div className="flex-1 overflow-y-auto p-6">
-          {/* 사용자 질문 */}
-          <div className="flex justify-end">
-            <div className="max-w-md rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-white">
-              개인정보 파기 관련해서 지난 회의에서 어떤 얘기가 나왔어?
-            </div>
-          </div>
+          {messages.length === 0 && (
+            <p className="pt-8 text-center text-sm text-ink-muted">
+              프로젝트 문서에 대해 궁금한 걸 물어보세요.
+            </p>
+          )}
 
-          {/* AI 답변 */}
-          <div className="mt-5 flex gap-3">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink text-xs font-semibold text-white">
-              AI
-            </span>
-            <div className="flex-1">
-              <div className="rounded-2xl rounded-tl-sm border border-border bg-surface px-4 py-3 text-sm leading-6 text-ink">
-                개인정보 파기 관련 내용은 다음과 같습니다.
-                <br />
-                1. 보유 기간 경과 시 지체 없이 파기
-                <br />
-                2. 파기 이력 관리 및 별도 절차 적용
+          {messages.map((m, i) =>
+            m.role === "user" ? (
+              <div key={i} className="flex justify-end">
+                <div className="max-w-md rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-white">
+                  {m.text}
+                </div>
               </div>
+            ) : (
+              <div key={i} className="my-5 flex gap-3">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink text-xs font-semibold text-white">
+                  AI
+                </span>
+                <div className="flex-1">
+                  <div
+                    className={`rounded-2xl rounded-tl-sm border px-4 py-3 text-sm leading-6 ${
+                      m.isError
+                        ? "border-primary-soft bg-primary-soft/40 text-primary"
+                        : "border-border bg-surface text-ink"
+                    }`}
+                  >
+                    {m.text}
+                  </div>
 
-              {/* 출처 */}
-              <div className="mt-3">
-                {/* `uppercase`는 "출처"(한글)에 아무 효과가 없고 넓은 자간만 헐렁하게 만들어 둘 다 제거. */}
-                <p className="mb-2 text-xs font-semibold text-ink-muted">출처</p>
-                <ul className="flex flex-col gap-2">
-                  {sources.map((s, i) => (
-                    <li
-                      key={i}
-                      className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
-                    >
-                      <div>
-                        <span className="font-medium text-ink">{s.name}</span>
-                        <span className="ml-2 text-xs text-ink-muted">{s.loc}</span>
-                      </div>
-                      <span className="text-xs font-medium text-primary">{s.score}</span>
-                    </li>
-                  ))}
-                </ul>
+                  {m.citations && m.citations.length > 0 && (
+                    <div className="mt-3">
+                      <p className="mb-2 text-xs font-semibold text-ink-muted">출처</p>
+                      <ul className="flex flex-col gap-2">
+                        {m.citations.map((c, ci) => (
+                          <li
+                            key={ci}
+                            className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
+                          >
+                            <div>
+                              <span className="font-medium text-ink">{c.document_name}</span>
+                              {citationLocation(c) && (
+                                <span className="ml-2 text-xs text-ink-muted">
+                                  {citationLocation(c)}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs font-medium text-primary">
+                              {Math.round(c.score * 100)}%
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
+            ),
+          )}
+
+          {sending && (
+            <div className="mt-5 flex items-center gap-2 text-sm text-ink-muted">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" />
+              답변을 생성하고 있어요…
             </div>
-          </div>
+          )}
         </div>
 
         {/* 입력창 */}
@@ -83,14 +167,22 @@ export default function RagSearchPage() {
           <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2">
             <input
               type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
+              }}
+              disabled={sending}
               placeholder="프로젝트 문서에 대해 질문하세요…"
-              className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
+              className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted disabled:opacity-50"
             />
             <button
               type="button"
-              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-hover"
+              onClick={() => void send()}
+              disabled={sending || !input.trim()}
+              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
-              전송
+              {sending ? "전송 중…" : "전송"}
             </button>
           </div>
         </div>
