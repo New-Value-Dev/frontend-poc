@@ -5,6 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { FOCUS_RING } from "@/components/ui/primitives";
+import { useAuth } from "@/components/auth/AuthProvider";
+
+type NavChild = {
+  href: string;
+  label: string;
+  match?: (path: string) => boolean;
+};
 
 type NavItem = {
   href: string;
@@ -12,6 +19,7 @@ type NavItem = {
   icon: ReactNode;
   /** 하위 라우트(예: /projects/123)도 활성 상태로 판단 */
   match?: (path: string) => boolean;
+  children?: NavChild[];
 };
 
 const nav: NavItem[] = [
@@ -29,7 +37,22 @@ const nav: NavItem[] = [
     match: (p) => p.startsWith("/proofread"),
   },
   { href: "/search", label: "RAG", icon: <IconChat />, match: (p) => p.startsWith("/search") },
-  { href: "/quiz", label: "퀴즈", icon: <IconQuiz />, match: (p) => p.startsWith("/quiz") },
+  {
+    href: "/quiz",
+    label: "퀴즈",
+    icon: <IconQuiz />,
+    match: (p) => p.startsWith("/quiz"),
+    children: [
+      {
+        href: "/quiz",
+        label: "문제집",
+        match: (p) => p === "/quiz" || /^\/quiz\/(?!bank|take|results)/.test(p),
+      },
+      { href: "/quiz/bank", label: "문제은행", match: (p) => p.startsWith("/quiz/bank") },
+      { href: "/quiz/take", label: "퀴즈 응시", match: (p) => p.startsWith("/quiz/take") },
+      { href: "/quiz/results", label: "결과 · 오답", match: (p) => p.startsWith("/quiz/results") },
+    ],
+  },
 ];
 
 const adminNav: NavItem[] = [
@@ -43,6 +66,8 @@ const adminNav: NavItem[] = [
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   // 모바일 드로어가 열려 있는 동안 Esc로 닫고, 배경 스크롤을 막는다.
   useEffect(() => {
@@ -101,14 +126,34 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 px-3 pb-2">
-          {nav.map((item) => (
-            <NavLink key={item.href} item={item} active={isActive(item, pathname)} />
-          ))}
+          {nav.map((item) => {
+            const active = isActive(item, pathname);
+            return (
+              <div key={item.href}>
+                <NavLink item={item} active={active} />
+                {item.children && (
+                  <div className="mt-1 flex flex-col gap-0.5 border-l border-border pl-3.5">
+                    {item.children.map((child) => (
+                      <NavChildLink
+                        key={child.href}
+                        child={child}
+                        active={child.match ? child.match(pathname) : pathname === child.href}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
-          <p className="px-3 pt-6 pb-2 text-xs font-semibold text-ink-muted">관리자</p>
-          {adminNav.map((item) => (
-            <NavLink key={item.href} item={item} active={isActive(item, pathname)} />
-          ))}
+          {isAdmin && (
+            <>
+              <p className="px-3 pt-6 pb-2 text-xs font-semibold text-ink-muted">관리자</p>
+              {adminNav.map((item) => (
+                <NavLink key={item.href} item={item} active={isActive(item, pathname)} />
+              ))}
+            </>
+          )}
         </nav>
 
         <div className="border-t border-border px-5 py-4 text-xs text-ink-muted">v0.1</div>
@@ -134,6 +179,20 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     >
       <span className={active ? "text-primary" : "text-ink-muted"}>{item.icon}</span>
       {item.label}
+    </Link>
+  );
+}
+
+function NavChildLink({ child, active }: { child: NavChild; active: boolean }) {
+  return (
+    <Link
+      href={child.href}
+      aria-current={active ? "page" : undefined}
+      className={`rounded-control px-3 py-1.5 text-sm transition-colors ${FOCUS_RING} ${
+        active ? "font-medium text-primary" : "text-ink-muted hover:bg-surface hover:text-ink"
+      }`}
+    >
+      {child.label}
     </Link>
   );
 }

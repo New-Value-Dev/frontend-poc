@@ -186,6 +186,31 @@ export type ProofreadFinding = {
   status: FindingStatus;
 };
 
+/**
+ * 문서 등록 없이 원문 텍스트만 검사하는 `/text/proofread` 응답
+ */
+export type TextProofreadFinding = {
+  id: string;
+  original: string;
+  suggestion: string;
+  reason: string;
+  category: string;
+};
+
+export type TextProofreadJob = {
+  id: number;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  findings: TextProofreadFinding[];
+  error: string | null;
+};
+
+/** `GET /text/proofread` 목록 항목 */
+export type TextProofreadJobSummary = {
+  id: number;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  created_at: string;
+};
+
 /** POST .../apply 응답 — 승인된 finding을 원본 파일에 반영해 만든 새 버전 정보. */
 export type ApplyAnalysisResult = {
   analysis_id: number;
@@ -245,40 +270,199 @@ export type ValidationIssue = {
 export type RelatedDocument = { documentId: string; name: string; score: number };
 
 /* --- RAG (백엔드 app/schemas/rag.py 반영, snake_case) --- */
-export type CitationRead = {
+export type RagScope = { project_ids?: number[]; folder_ids?: number[] };
+
+/** `POST /rag/search` 결과 항목 */
+export type RagSearchHit = {
+  index: number;
   document_id: number;
   document_name: string;
-  section_id: number | null;
+  section_id: number;
   chunk_id: number;
   page_start: number | null;
   page_end: number | null;
   score: number;
+  heading_path: string[];
+  content: string;
+  expanded: boolean;
 };
 
-export type RagAnswer = {
-  id: number;
+export type RagSearchResponse = {
+  question: string;
+  embedding_model: string;
+  hits: RagSearchHit[];
+};
+
+export type RagCitation = {
+  index: number;
+  document_id: number;
+  document_name: string;
+  section_id: number;
+  chunk_id: number;
+  page_start: number | null;
+  page_end: number | null;
+  score: number;
+  heading_path: string[];
+};
+
+export type RagQueryRequest = {
+  question: string;
+  scope?: RagScope;
+  conversation_id?: number;
+  top_k?: number;
+};
+
+export type RagQueryResponse = {
+  conversation_id: number;
+  message_id: number;
   question: string;
   answer: string;
-  citations: CitationRead[];
+  citations: RagCitation[];
+  provider: string;
+  embedding_model: string;
+  retrieved_count: number;
+  latency_ms: number;
+};
+
+export type RagStreamMeta = {
+  conversation_id: number;
+  embedding_model: string;
+  retrieved_count: number;
+};
+
+export type RagStreamDone = {
+  conversation_id: number;
+  message_id: number;
+  provider: string;
+  retrieved_count: number;
+  latency_ms: number;
+};
+
+export type RagHistoryItem = {
+  conversation_id: number;
+  message_id: number;
+  question: string;
+  at: string;
+};
+
+export type RagConversationSummary = {
+  id: number;
+  title: string | null;
+  project_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RagMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  citations: RagCitation[] | null;
   provider: string | null;
   created_at: string;
 };
 
-export type RagScope = { project_ids?: number[]; folder_ids?: number[] };
+export type RagConversationDetail = RagConversationSummary & {
+  messages: RagMessage[];
+};
 
-export type RagHistoryItem = { id: number; question: string; created_at: string };
+/* --- Embedding Lab (백엔드 app/schemas/embedding.py 반영, 전부 admin 전용) --- */
+export type EmbeddingModelStatus = "TEST" | "TESTED" | "ACTIVE";
 
-/* --- Embedding Lab --- */
 export type EmbeddingModel = {
-  id: string;
-  key: string;
-  name: string;
-  status: "ACTIVE" | "TESTED" | "TEST";
-  recall: number;
-  latencyMs: number;
-  ram: string;
+  id: number;
+  model_key: string;
+  model_name: string;
+  model_version: string | null;
   dimension: number;
-  isActive: boolean;
+  max_tokens: number | null;
+  status: EmbeddingModelStatus;
+  is_active: boolean;
+  config: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type EmbeddingJobStatus = "RUNNING" | "COMPLETED" | "FAILED";
+
+export type EmbeddingJob = {
+  id: number;
+  job_type: "reembed" | "migrate";
+  embedding_model_id: number | null;
+  status: EmbeddingJobStatus;
+  target_count: number;
+  processed_count: number;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+};
+
+export type BenchmarkGroundTruth = {
+  document_id: number;
+  expected_snippet: string;
+  page_start?: number | null;
+};
+
+export type BenchmarkQuestionCreate = {
+  question: string;
+  category?: string | null;
+  ground_truth: BenchmarkGroundTruth[];
+};
+
+export type BenchmarkQuestion = {
+  id: number;
+  question: string;
+  category: string | null;
+  ground_truth: BenchmarkGroundTruth[];
+};
+
+export type BenchmarkDataset = {
+  id: number;
+  name: string;
+  description: string | null;
+  project_id: number | null;
+  created_at: string;
+  question_count: number;
+};
+
+export type ChunkingConfigOverride = {
+  strategy?: "structure" | "semantic" | null;
+  chunk_max_chars?: number | null;
+  chunk_overlap_chars?: number | null;
+  sentence_window?: number | null;
+  breakpoint_percentile?: number | null;
+};
+
+export type BenchmarkResultStatus = "RUNNING" | "COMPLETED" | "FAILED";
+
+export type BenchmarkResult = {
+  id: number;
+  embedding_model_id: number;
+  status: BenchmarkResultStatus;
+  recall_at_1: number | null;
+  recall_at_3: number | null;
+  recall_at_5: number | null;
+  mrr: number | null;
+  ndcg: number | null;
+  avg_query_latency_ms: number | null;
+  embed_throughput_chunks_per_sec: number | null;
+  model_load_time_ms: number | null;
+  ram_mb: number | null;
+  score: number | null;
+  error: string | null;
+};
+
+export type BenchmarkRunStatus = "RUNNING" | "COMPLETED" | "FAILED";
+
+export type BenchmarkRun = {
+  id: number;
+  dataset_id: number;
+  chunking_config: Record<string, unknown>;
+  rag_top_k: number;
+  rag_min_score: number;
+  status: BenchmarkRunStatus;
+  created_at: string;
+  finished_at: string | null;
+  results: BenchmarkResult[];
 };
 
 /* --- Dashboard --- */
@@ -324,7 +508,11 @@ export type NotificationType =
   | "project.invite_declined"
   | "project.member_removed"
   | "analysis.complete"
-  | "analysis.fail";
+  | "analysis.fail"
+  | "text_proofread.complete"
+  | "text_proofread.fail"
+  | "quiz_generate.complete"
+  | "quiz_generate.fail";
 
 export type NotificationItem = {
   id: number;
@@ -349,6 +537,154 @@ export type PushSubscribeRequest = {
 };
 
 export type PushUnsubscribeRequest = { endpoint: string };
+
+/* --- Quiz --- */
+export type QuizDifficulty = "EASY" | "MEDIUM" | "HARD";
+export type QuizQuestionType = "SINGLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER";
+export type QuizReviewStatus = "DRAFT" | "REVIEWED" | "APPROVED";
+export type QuizGenerationType = "AI" | "MANUAL";
+export type QuizSessionMode = "study" | "exam";
+export type QuizSessionStatus = "IN_PROGRESS" | "SUBMITTED";
+
+/** 문제은행/편집용 */
+export type QuizQuestion = {
+  id: number;
+  project_id: number;
+  source_document_id: number | null;
+  type: QuizQuestionType | string;
+  text: string;
+  options: string[] | null;
+  correct_answer: string;
+  explanation: string;
+  difficulty: QuizDifficulty | string;
+  tags: string[] | null;
+  source_location: string | null;
+  generation_type: QuizGenerationType | string;
+  review_status: QuizReviewStatus | string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuizQuestionCreate = {
+  type: QuizQuestionType;
+  text: string;
+  options?: string[] | null;
+  correct_answer: string;
+  explanation: string;
+  difficulty: QuizDifficulty;
+  tags?: string[];
+  source_document_id?: number | null;
+  source_location?: string | null;
+};
+
+export type QuizQuestionUpdate = Partial<QuizQuestionCreate & { review_status: QuizReviewStatus }>;
+
+export type QuizQuestionPlay = {
+  id: number;
+  type: QuizQuestionType | string;
+  text: string;
+  options: string[] | null;
+  difficulty: QuizDifficulty | string;
+};
+
+export type QuizBook = {
+  id: number;
+  project_id: number;
+  title: string;
+  description: string | null;
+  source_document_ids: number[] | null;
+  passing_score: number;
+  time_limit_minutes: number | null;
+  shuffle_questions: boolean;
+  shuffle_options: boolean;
+  allow_retake: boolean;
+  reveal_answers: boolean;
+  has_sessions: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuizBookCreate = {
+  title: string;
+  description?: string | null;
+  source_document_ids?: number[];
+  passing_score?: number;
+  time_limit_minutes?: number | null;
+  shuffle_questions?: boolean;
+  shuffle_options?: boolean;
+  allow_retake?: boolean;
+  reveal_answers?: boolean;
+};
+
+export type QuizBookUpdate = Partial<QuizBookCreate>;
+
+export type QuizGenerationStatus = "RUNNING" | "COMPLETED" | "FAILED";
+
+/**
+ * AI 문제 생성 요청 
+ */
+export type QuizGenerateRequest = {
+  document_ids: number[];
+  count?: number;
+  types?: QuizQuestionType[];
+  difficulty?: QuizDifficulty | null;
+  exclude_duplicates?: boolean;
+  quiz_book_id?: number | null;
+};
+
+/** 생성 작업 상태 */
+export type QuizGenerationJob = {
+  id: number;
+  project_id: number;
+  user_id: number;
+  quiz_book_id: number | null;
+  status: QuizGenerationStatus | string;
+  requested_count: number;
+  created_count: number;
+  question_ids: number[] | null;
+  provider: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuizSessionStartResponse = {
+  session_id: number;
+  mode: QuizSessionMode | string;
+  questions: QuizQuestionPlay[];
+};
+
+/** study 모드 즉시채점 응답 */
+export type QuizAnswerGradeResult = {
+  is_correct: boolean;
+  correct_answer: string;
+  explanation: string;
+};
+
+export type QuizAnswerRecord = {
+  question_id: number | null;
+  question_text: string;
+  options: string[] | null;
+  user_answer: string;
+  is_correct: boolean;
+  correct_answer: string | null;
+  explanation: string | null;
+};
+
+export type QuizSession = {
+  id: number;
+  quiz_book_id: number;
+  user_id: number;
+  mode: QuizSessionMode | string;
+  status: QuizSessionStatus | string;
+  created_at: string;
+  submitted_at: string | null;
+  score: number | null;
+  correct_count: number | null;
+  total_count: number | null;
+};
+
+export type QuizSessionResult = QuizSession & { answers: QuizAnswerRecord[] };
 
 /* --- Common --- */
 export type Paginated<T> = { items: T[]; total: number; page: number; limit: number };

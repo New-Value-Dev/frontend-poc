@@ -1,8 +1,18 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import type { DocStatus, MemberStatus, NotificationType, Visibility } from "@/lib/types";
+import type {
+  DocStatus,
+  EmbeddingJobStatus,
+  EmbeddingModelStatus,
+  MemberStatus,
+  NotificationType,
+  QuizDifficulty,
+  QuizQuestionType,
+  QuizReviewStatus,
+  Visibility,
+} from "@/lib/types";
 
-export type { DocStatus };
+export type { DocStatus, QuizDifficulty, QuizQuestionType, QuizReviewStatus };
 
 export const FOCUS_RING =
   "outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas";
@@ -224,7 +234,7 @@ export function StatusBadge({ status }: { status: DocStatus | string }) {
   const known = STATUS_STYLES[status as DocStatus];
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
         TONE_STYLES[known?.tone ?? "idle"]
       }`}
     >
@@ -247,7 +257,7 @@ export function VisibilityBadge({ visibility }: { visibility: Visibility | strin
   const known = VISIBILITY_STYLES[visibility as Visibility];
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
         TONE_STYLES[known?.tone ?? "idle"]
       }`}
     >
@@ -270,7 +280,7 @@ export function MemberStatusBadge({ status }: { status: MemberStatus | string })
   const known = MEMBER_STATUS_STYLES[status as MemberStatus];
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
         TONE_STYLES[known?.tone ?? "idle"]
       }`}
     >
@@ -279,28 +289,27 @@ export function MemberStatusBadge({ status }: { status: MemberStatus | string })
   );
 }
 
-const NOTIFICATION_STYLES: Record<NotificationType, { label: string; tone: StatusTone }> = {
-  "project.invite": { label: "초대", tone: "active" },
-  "project.invite_accepted": { label: "수락", tone: "done" },
-  "project.invite_declined": { label: "거절", tone: "idle" },
-  "project.member_removed": { label: "멤버", tone: "idle" },
-  "analysis.complete": { label: "분석 완료", tone: "done" },
-  "analysis.fail": { label: "분석 실패", tone: "fail" },
+const NOTIFICATION_LABELS: Record<NotificationType, string> = {
+  "project.invite": "초대",
+  "project.invite_accepted": "수락",
+  "project.invite_declined": "거절",
+  "project.member_removed": "멤버",
+  "analysis.complete": "분석 완료",
+  "analysis.fail": "분석 실패",
+  "text_proofread.complete": "맞춤법 검사 완료",
+  "text_proofread.fail": "맞춤법 검사 실패",
+  "quiz_generate.complete": "문제 생성 완료",
+  "quiz_generate.fail": "문제 생성 실패",
 };
 
 export function notificationTypeLabel(type: NotificationType | string): string {
-  return NOTIFICATION_STYLES[type as NotificationType]?.label ?? type;
+  return NOTIFICATION_LABELS[type as NotificationType] ?? type;
 }
 
 export function NotificationTypeBadge({ type }: { type: NotificationType | string }) {
-  const known = NOTIFICATION_STYLES[type as NotificationType];
   return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        TONE_STYLES[known?.tone ?? "idle"]
-      }`}
-    >
-      {known?.label ?? type}
+    <span className="inline-flex shrink-0 items-center rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-ink-muted">
+      {notificationTypeLabel(type)}
     </span>
   );
 }
@@ -321,7 +330,7 @@ export function ProofreadCategoryBadge({ category }: { category: string }) {
   const known = PROOFREAD_CATEGORY_STYLES[category];
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
         known?.className ?? "bg-surface-2 text-ink-muted"
       }`}
     >
@@ -332,8 +341,123 @@ export function ProofreadCategoryBadge({ category }: { category: string }) {
 
 export function Tag({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-surface-2 px-2.5 py-0.5 text-xs text-ink-muted">
+    <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-surface-2 px-2.5 py-0.5 text-xs text-ink-muted">
       {children}
+    </span>
+  );
+}
+
+const EMBEDDING_MODEL_STATUS_STYLES: Record<EmbeddingModelStatus, { label: string; tone: StatusTone }> = {
+  TEST: { label: "테스트", tone: "idle" },
+  TESTED: { label: "검증됨", tone: "active" },
+  ACTIVE: { label: "활성", tone: "done" },
+};
+
+export function embeddingModelStatusLabel(status: EmbeddingModelStatus | string): string {
+  return EMBEDDING_MODEL_STATUS_STYLES[status as EmbeddingModelStatus]?.label ?? status;
+}
+
+export function EmbeddingModelStatusBadge({ status }: { status: EmbeddingModelStatus | string }) {
+  const known = EMBEDDING_MODEL_STATUS_STYLES[status as EmbeddingModelStatus];
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        TONE_STYLES[known?.tone ?? "idle"]
+      }`}
+    >
+      {known?.label ?? status}
+    </span>
+  );
+}
+
+const EMBEDDING_JOB_STATUS_STYLES: Record<EmbeddingJobStatus, { label: string; tone: StatusTone }> = {
+  RUNNING: { label: "진행 중", tone: "active" },
+  COMPLETED: { label: "완료", tone: "done" },
+  FAILED: { label: "실패", tone: "fail" },
+};
+
+export function embeddingJobStatusLabel(status: EmbeddingJobStatus | string): string {
+  return EMBEDDING_JOB_STATUS_STYLES[status as EmbeddingJobStatus]?.label ?? status;
+}
+
+export function EmbeddingJobStatusBadge({ status }: { status: EmbeddingJobStatus | string }) {
+  const known = EMBEDDING_JOB_STATUS_STYLES[status as EmbeddingJobStatus];
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        TONE_STYLES[known?.tone ?? "idle"]
+      }`}
+    >
+      {known?.label ?? status}
+    </span>
+  );
+}
+
+const DIFFICULTY_STYLES: Record<QuizDifficulty, { label: string; tone: StatusTone }> = {
+  EASY: { label: "쉬움", tone: "done" },
+  MEDIUM: { label: "보통", tone: "active" },
+  HARD: { label: "어려움", tone: "fail" },
+};
+
+export function difficultyLabel(difficulty: QuizDifficulty | string): string {
+  return DIFFICULTY_STYLES[difficulty as QuizDifficulty]?.label ?? difficulty;
+}
+
+export function DifficultyBadge({ difficulty }: { difficulty: QuizDifficulty | string }) {
+  const known = DIFFICULTY_STYLES[difficulty as QuizDifficulty];
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        TONE_STYLES[known?.tone ?? "idle"]
+      }`}
+    >
+      {known?.label ?? difficulty}
+    </span>
+  );
+}
+
+const QUESTION_TYPE_STYLES: Record<QuizQuestionType, { label: string; className: string }> = {
+  SINGLE_CHOICE: { label: "객관식", className: "bg-sky-50 text-sky-700" },
+  TRUE_FALSE: { label: "O/X", className: "bg-violet-50 text-violet-700" },
+  SHORT_ANSWER: { label: "단답형", className: "bg-surface-2 text-ink-muted" },
+};
+
+export function questionTypeLabel(type: QuizQuestionType | string): string {
+  return QUESTION_TYPE_STYLES[type as QuizQuestionType]?.label ?? type;
+}
+
+export function QuestionTypeBadge({ type }: { type: QuizQuestionType | string }) {
+  const known = QUESTION_TYPE_STYLES[type as QuizQuestionType];
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        known?.className ?? "bg-surface-2 text-ink-muted"
+      }`}
+    >
+      {known?.label ?? type}
+    </span>
+  );
+}
+
+const REVIEW_STATUS_STYLES: Record<QuizReviewStatus, { label: string; tone: StatusTone }> = {
+  DRAFT: { label: "검수 전", tone: "idle" },
+  REVIEWED: { label: "검수 중", tone: "active" },
+  APPROVED: { label: "검수 완료", tone: "done" },
+};
+
+export function reviewStatusLabel(status: QuizReviewStatus | string): string {
+  return REVIEW_STATUS_STYLES[status as QuizReviewStatus]?.label ?? status;
+}
+
+export function ReviewStatusBadge({ status }: { status: QuizReviewStatus | string }) {
+  const known = REVIEW_STATUS_STYLES[status as QuizReviewStatus];
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        TONE_STYLES[known?.tone ?? "idle"]
+      }`}
+    >
+      {known?.label ?? status}
     </span>
   );
 }

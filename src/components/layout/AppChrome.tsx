@@ -7,7 +7,7 @@ import { Topbar } from "./Topbar";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 /** 앱 셸(사이드바/톱바) 없이 렌더링되는 라우트. */
-const BARE_PREFIXES = ["/login", "/auth"];
+const BARE_PREFIXES = ["/login", "/auth", "/zz-preview"];
 
 /*
  * 클라이언트 사이드 인증 가드. refresh 쿠키는 백엔드 origin 소유라 프론트가
@@ -53,7 +53,7 @@ export function AppChrome({ children }: { children: ReactNode }) {
       <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenuClick={() => setNavOpen(true)} />
-        <main className="flex-1 overflow-y-auto bg-surface px-4 py-5 sm:px-8 sm:py-7">
+        <main className="flex-1 overflow-y-auto bg-surface px-4 py-5 [scrollbar-gutter:stable] sm:px-8 sm:py-7">
           {children}
         </main>
       </div>

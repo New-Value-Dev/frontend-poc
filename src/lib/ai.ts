@@ -7,6 +7,8 @@ import type {
   RelatedDocument,
   FindingStatus,
   ApplyAnalysisResult,
+  TextProofreadJob,
+  TextProofreadJobSummary,
 } from "./types";
 
 /** 문서의 현재 버전에 대해 오타 검증을 실행 → 저장된 분석 결과 반환. */
@@ -45,6 +47,21 @@ export function setFindingStatus(
  */
 export function applyAnalysis(docId: string, analysisId: number) {
   return api.post<ApplyAnalysisResult>(`/documents/${docId}/analyses/${analysisId}/apply`);
+}
+
+/** 문서 등록 없이 원문 텍스트를 바로 검사 */
+export function startTextProofread(content: string) {
+  return api.post<TextProofreadJob>(`/text/proofread`, { content });
+}
+
+/** 텍스트 검사 job 상태 조회*/
+export function getTextProofreadJob(jobId: number) {
+  return api.get<TextProofreadJob>(`/text/proofread/${jobId}`);
+}
+
+/** 현재 사용자의 최근 텍스트 검사 job 목록 */
+export function listTextProofreadJobs() {
+  return api.get<TextProofreadJobSummary[]>(`/text/proofread`);
 }
 
 export function classify(docId: string) {
