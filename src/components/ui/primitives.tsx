@@ -243,6 +243,34 @@ export function StatusBadge({ status }: { status: DocStatus | string }) {
   );
 }
 
+export type ConfidenceTier = "high" | "medium" | "low";
+
+const CONFIDENCE_STYLES: Record<ConfidenceTier, { label: string; tone: StatusTone }> = {
+  high: { label: "신뢰도 높음", tone: "done" },
+  medium: { label: "신뢰도 보통", tone: "active" },
+  low: { label: "신뢰도 낮음", tone: "fail" },
+};
+
+export function confidenceTier(value: number): ConfidenceTier {
+  if (value >= 0.75) return "high";
+  if (value >= 0.4) return "medium";
+  return "low";
+}
+
+export function ConfidenceBadge({ value }: { value: number }) {
+  const tier = confidenceTier(value);
+  const { label, tone } = CONFIDENCE_STYLES[tier];
+  const pct = Math.round(value * 100);
+  return (
+    <span
+      title="GPT가 스스로 평가한 답변 신뢰도"
+      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${TONE_STYLES[tone]}`}
+    >
+      {label} · {pct}%
+    </span>
+  );
+}
+
 const VISIBILITY_STYLES: Record<Visibility, { label: string; tone: StatusTone }> = {
   public: { label: "공개", tone: "done" },
   invite: { label: "초대", tone: "active" },

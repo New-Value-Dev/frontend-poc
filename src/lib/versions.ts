@@ -9,6 +9,15 @@ export function getVersion(versionId: string) {
   return api.get<DocumentVersion>(`/versions/${versionId}`);
 }
 
+/** 기존 문서에 새 버전(v2+)을 추가 — 202 + 새 버전, 파싱은 백그라운드에서 계속됨. */
+export function createVersion(docId: string, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return api.post<DocumentVersion>(`/documents/${docId}/versions`, form, {
+    form: true,
+  });
+}
+
 /** 파싱된 섹션 목록 — 아웃라인과 문서 뷰어의 기반 데이터. */
 export function getSections(versionId: number) {
   return api.get<Section[]>(`/versions/${versionId}/sections`);

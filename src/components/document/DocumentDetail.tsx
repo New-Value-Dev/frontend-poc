@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { getDocument, downloadDocument, fetchDocumentBlob } from "@/lib/documents";
 import { getProject } from "@/lib/projects";
 import { listVersions, getSections } from "@/lib/versions";
@@ -167,6 +168,17 @@ export function DocumentDetail({ docId }: { docId: string }) {
     const t = window.setTimeout(() => setHighlight(null), 2600);
     return () => window.clearTimeout(t);
   }, [highlight]);
+
+  const searchParams = useSearchParams();
+  const urlSectionId = Number(searchParams.get("section"));
+  const appliedUrlFocusRef = useRef(false);
+  useEffect(() => {
+    if (appliedUrlFocusRef.current) return;
+    if (!Number.isFinite(urlSectionId) || !byId.has(urlSectionId)) return;
+    appliedUrlFocusRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    focusSection(urlSectionId);
+  }, [urlSectionId, byId]);
 
   async function onDownload() {
     setDownloading(true);

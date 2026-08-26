@@ -73,11 +73,15 @@ export default function ProofreadTextPage() {
   const [checkError, setCheckError] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveMarkdown, setSaveMarkdown] = useState("");
+  const [saveOriginalMarkdown, setSaveOriginalMarkdown] = useState("");
   const [saved, setSaved] = useState<Document | null>(null);
   // 진행 중인 폴링 루프를 취소하기 위한 토큰. AiPanel의 오탈자 검증 폴링과 같은 패턴.
   const pollRef = useRef<{ cancelled: boolean } | null>(null);
   // 마운트 시 이어받았거나 방금 시작한 job의 id. 초기화 시 이 id를 "무시할 job"으로 기록한다.
   const currentJobIdRef = useRef<number | null>(null);
+  const restoreSuppressedRef = useRef(false);
+  // 검사를 걸었던 시점의 마크다운 — "새 문서로 저장" 시 V1(원본)으로 남겨 교정 전후를 구분한다.
+  const originalMarkdownRef = useRef(draftMarkdown);
 
   const acceptedCount = findings.filter((f) => f.status === "accepted").length;
 
@@ -126,6 +130,12 @@ export default function ProofreadTextPage() {
         if (latest.id === loadDismissedJobId()) return;
         const full = await getTextProofreadJob(latest.id);
         if (cancelled) return;
+        if (restoreSuppressedRef.current) {
+          // 응답을 기다리는 사이에 사용자가 이미 초기화를 눌렀다 — 이 job을 이어받는 대신
+          // dismiss 기록만 남겨서, 이후 다른 메뉴에 갔다 와도 다시 복원되지 않게 한다.
+          saveDismissedJobId(full.id);
+          return;
+        }
         currentJobIdRef.current = full.id;
         if (full.status === "RUNNING") {
           setChecking(true);
@@ -154,7 +164,10 @@ export default function ProofreadTextPage() {
     setChecked(false);
     setCheckError(null);
     setSaved(null);
-    saveDraft(editorRef.current?.getMarkdown() ?? "");
+    const currentMarkdown = editorRef.current?.getMarkdown() ?? "";
+    saveDraft(currentMarkdown);
+    originalMarkdownRef.current = currentMarkdown;
+    restoreSuppressedRef.current = false;
     try {
       const started = await startTextProofread(markdown);
       currentJobIdRef.current = started.id;
@@ -189,6 +202,7 @@ export default function ProofreadTextPage() {
 
   function openSaveDialog() {
     setSaveMarkdown(editorRef.current?.getMarkdown() ?? "");
+    setSaveOriginalMarkdown(originalMarkdownRef.current);
     setSaveOpen(true);
   }
 
@@ -196,6 +210,8 @@ export default function ProofreadTextPage() {
     stopPolling();
     editorRef.current?.setMarkdown("");
     saveDraft("");
+    originalMarkdownRef.current = "";
+    restoreSuppressedRef.current = true;
     if (currentJobIdRef.current != null) {
       saveDismissedJobId(currentJobIdRef.current);
       currentJobIdRef.current = null;
@@ -366,6 +382,7 @@ export default function ProofreadTextPage() {
       <SaveAsDocumentDialog
         open={saveOpen}
         markdown={saveMarkdown}
+        originalMarkdown={saveOriginalMarkdown}
         onCancel={() => setSaveOpen(false)}
         onSaved={(doc) => {
           setSaved(doc);

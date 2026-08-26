@@ -102,6 +102,7 @@ function ProofreadPanel({
   const [applyResult, setApplyResult] = useState<ApplyAnalysisResult | null>(null);
   const [appliedAnalysisId, setAppliedAnalysisId] = useState<number | null>(null);
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [showSkipReasons, setShowSkipReasons] = useState(false);
   const ready = !NOT_READY.includes(status);
   // 진행 중인 폴링 루프를 취소하기 위한 토큰.
   const pollRef = useRef<{ cancelled: boolean } | null>(null);
@@ -318,8 +319,33 @@ function ProofreadPanel({
               <div className="rounded-control border border-border bg-emerald-50 p-3 text-xs text-emerald-700">
                 {applyResult ? (
                   <>
-                    V{applyResult.new_version_no}에 {applyResult.applied_count}건 적용됨
-                    {applyResult.skipped_count > 0 && ` · ${applyResult.skipped_count}건 건너뜀`}
+                    <div>
+                      V{applyResult.new_version_no}에 {applyResult.applied_count}건 적용됨
+                      {applyResult.skipped_count > 0 && (
+                        <>
+                          {" · "}
+                          {applyResult.skipped_count}건 건너뜀
+                          {applyResult.skipped_reasons.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowSkipReasons((v) => !v)}
+                              className={`ml-1 underline decoration-dotted underline-offset-2 ${FOCUS_RING}`}
+                            >
+                              {showSkipReasons ? "사유 접기" : "사유 보기"}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {applyResult.skipped_count > 0 &&
+                      showSkipReasons &&
+                      applyResult.skipped_reasons.length > 0 && (
+                        <ul className="mt-2 flex flex-col gap-1 border-t border-emerald-200 pt-2 text-emerald-700">
+                          {applyResult.skipped_reasons.map((reason, i) => (
+                            <li key={i}>· {reason}</li>
+                          ))}
+                        </ul>
+                      )}
                   </>
                 ) : (
                   <>
@@ -333,8 +359,16 @@ function ProofreadPanel({
             ) : (
               acceptedCount > 0 && (
                 <div className="flex flex-col gap-2">
-                  <Button onClick={apply} disabled={applying} className="w-full justify-center py-2.5">
-                    {applying ? "적용 중…" : `승인된 교정 ${acceptedCount}건 적용`}
+                  <Button
+                    onClick={apply}
+                    disabled={applying || bulkUpdating}
+                    className="w-full justify-center py-2.5"
+                  >
+                    {applying
+                      ? "적용 중…"
+                      : bulkUpdating
+                        ? "승인 반영 중…"
+                        : `승인된 교정 ${acceptedCount}건 적용`}
                   </Button>
                   {fileExt === "pdf" && (
                     <p className="text-xs text-ink-muted">

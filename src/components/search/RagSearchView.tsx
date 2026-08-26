@@ -1,11 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { listProjects } from "@/lib/projects";
-import { listConversations, getConversation, queryStream } from "@/lib/rag";
+import {
+  listConversations,
+  getConversation,
+  queryStream,
+  renameConversation,
+  deleteConversation,
+} from "@/lib/rag";
 import { errorMessage, isAuthError, ApiError } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { ErrorBanner, FOCUS_RING } from "@/components/ui/primitives";
+import { ConfidenceBadge, ErrorBanner, FOCUS_RING } from "@/components/ui/primitives";
+import { ConfirmDialog, PromptDialog } from "@/components/ui/Modal";
+import { IconMenu } from "@/components/ui/IconMenu";
 import { relativeTime } from "@/components/activity/ActivityFeed";
 import type { Project, RagCitation, RagConversationSummary } from "@/lib/types";
 
@@ -14,7 +25,10 @@ type LocalMessage = {
   content: string;
   citations?: RagCitation[];
   streaming?: boolean;
+  confidence?: number | null;
   error?: string;
+  errorCode?: string;
+  retryQuestion?: string;
 };
 
 export function RagSearchView() {
@@ -37,6 +51,11 @@ export function RagSearchView() {
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needLogin, setNeedLogin] = useState(false);
+
+  const [renameTarget, setRenameTarget] = useState<RagConversationSummary | null>(null);
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<RagConversationSummary | null>(null);
+  const [deleteConvBusy, setDeleteConvBusy] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -84,6 +103,40 @@ export function RagSearchView() {
     setError(null);
   }
 
+  async function submitRename(title: string) {
+    if (!renameTarget) return;
+    setRenameBusy(true);
+    try {
+      const updated = await renameConversation(renameTarget.id, title);
+      setConversations((prev) =>
+        prev.map((c) => (c.id === updated.id ? updated : c)),
+      );
+      setRenameTarget(null);
+    } catch (e) {
+      setError(errorMessage(e, "대화 제목 변경에 실패했습니다."));
+      setNeedLogin(isAuthError(e));
+    } finally {
+      setRenameBusy(false);
+    }
+  }
+
+  async function confirmDeleteConversation() {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    setDeleteConvBusy(true);
+    try {
+      await deleteConversation(id);
+      if (activeConversationId === id) startNewConversation();
+      setConversations(await listConversations());
+      setDeleteTarget(null);
+    } catch (e) {
+      setError(errorMessage(e, "대화 삭제에 실패했습니다."));
+      setNeedLogin(isAuthError(e));
+    } finally {
+      setDeleteConvBusy(false);
+    }
+  }
+
   const openConversation = useCallback(async (id: number) => {
     abortRef.current?.abort();
     setLoadingConversation(true);
@@ -91,11 +144,13 @@ export function RagSearchView() {
     try {
       const detail = await getConversation(id);
       setActiveConversationId(detail.id);
+      setSelectedProjectIds(new Set(detail.scope?.project_ids ?? []));
       setMessages(
         detail.messages.map((m) => ({
           role: m.role,
           content: m.content,
           citations: m.citations ?? undefined,
+          confidence: m.confidence,
         })),
       );
     } catch (e) {
@@ -117,6 +172,20 @@ export function RagSearchView() {
       { role: "user", content: q },
       { role: "assistant", content: "", streaming: true },
     ]);
+    await runQuery(q);
+  }
+
+  async function retry(q: string) {
+    if (sending) return;
+    setError(null);
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "", streaming: true },
+    ]);
+    await runQuery(q);
+  }
+
+  async function runQuery(q: string) {
     setSending(true);
 
     const controller = new AbortController();
@@ -160,14 +229,20 @@ export function RagSearchView() {
             });
           },
           onCitations: (citations) => updateLastAssistant({ citations }),
-          onDone: () => {
-            updateLastAssistant({ streaming: false });
+          onDone: (done) => {
+            setActiveConversationId(done.conversation_id);
+            updateLastAssistant({ streaming: false, confidence: done.confidence });
             listConversations()
               .then(setConversations)
               .catch(() => {});
           },
-          onError: (detail) => {
-            updateLastAssistant({ streaming: false, error: detail });
+          onError: (code, detail) => {
+            updateLastAssistant({
+              streaming: false,
+              error: detail,
+              errorCode: code,
+              retryQuestion: q,
+            });
           },
         },
         controller.signal,
@@ -240,11 +315,11 @@ export function RagSearchView() {
             </li>
           )}
           {conversations.map((c) => (
-            <li key={c.id}>
+            <li key={c.id} className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => openConversation(c.id)}
-                className={`w-full truncate rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${FOCUS_RING} ${
+                className={`min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${FOCUS_RING} ${
                   c.id === activeConversationId
                     ? "bg-primary-soft text-primary"
                     : "text-ink hover:bg-surface"
@@ -257,6 +332,23 @@ export function RagSearchView() {
                   {relativeTime(c.updated_at)}
                 </span>
               </button>
+              <IconMenu
+                ariaLabel={`${c.title || "제목 없는 대화"} 메뉴`}
+                variant="plain"
+                items={[
+                  {
+                    key: "rename",
+                    label: "제목 수정",
+                    onSelect: () => setRenameTarget(c),
+                  },
+                  {
+                    key: "delete",
+                    label: "삭제",
+                    tone: "danger",
+                    onSelect: () => setDeleteTarget(c),
+                  },
+                ]}
+              />
             </li>
           ))}
         </ul>
@@ -293,8 +385,28 @@ export function RagSearchView() {
                       AI
                     </span>
                     <div className="flex-1">
-                      <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-border bg-surface px-4 py-3 text-sm leading-6 text-ink">
-                        {m.content}
+                      <div className="markdown-content rounded-2xl rounded-tl-sm border border-border bg-surface px-4 py-3 text-sm leading-6 text-ink">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            a: ({ href, children }) => (
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {children}
+                              </a>
+                            ),
+                            table: ({ children }) => (
+                              <div className="overflow-x-auto">
+                                <table>{children}</table>
+                              </div>
+                            ),
+                          }}
+                        >
+                          {m.content}
+                        </ReactMarkdown>
                         {m.streaming && (
                           <span className="ml-0.5 inline-block animate-pulse">
                             ▍
@@ -303,38 +415,70 @@ export function RagSearchView() {
                         {m.error && (
                           <span className="block text-primary">{m.error}</span>
                         )}
+                        {m.errorCode === "llm_call_failed" &&
+                          m.retryQuestion && (
+                            <button
+                              type="button"
+                              onClick={() => retry(m.retryQuestion!)}
+                              disabled={sending}
+                              className={`mt-2 rounded-lg border border-primary px-3 py-1 text-xs font-medium text-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`}
+                            >
+                              다시 시도
+                            </button>
+                          )}
                       </div>
 
-                      {!!m.citations?.length && (
+                      {!m.streaming &&
+                        (m.confidence != null || !!m.citations?.length) && (
                         <div className="mt-3">
-                          <p className="mb-2 text-xs font-semibold text-ink-muted">
-                            출처
-                          </p>
-                          <ul className="flex flex-col gap-2">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            {!!m.citations?.length ? (
+                              <p className="text-xs font-semibold text-ink-muted">
+                                출처
+                              </p>
+                            ) : (
+                              <span />
+                            )}
+                            {m.confidence != null && (
+                              <ConfidenceBadge value={m.confidence} />
+                            )}
+                          </div>
+                          {!!m.citations?.length && (
+                            <ul className="flex flex-col gap-2">
                             {m.citations.map((c) => (
-                              <li
-                                key={`${c.chunk_id}-${c.index}`}
-                                className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm"
-                              >
-                                <div className="min-w-0">
-                                  <span className="font-medium text-ink">
-                                    {c.document_name}
-                                  </span>
-                                  {(c.heading_path.length > 0 ||
-                                    c.page_start) && (
-                                    <span className="ml-2 truncate text-xs text-ink-muted">
-                                      {c.heading_path.join(" · ")}
-                                      {c.page_start &&
-                                        ` (p.${c.page_start}${c.page_end && c.page_end !== c.page_start ? `-${c.page_end}` : ""})`}
+                              <li key={`${c.chunk_id}-${c.index}`}>
+                                <Link
+                                  href={`/documents/${c.document_id}${c.section_id ? `?section=${c.section_id}` : ""}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`flex flex-col gap-1.5 rounded-lg border border-border px-3 py-2 text-sm transition-colors hover:border-primary hover:bg-primary-soft ${FOCUS_RING}`}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <span className="font-medium text-ink">
+                                        {c.document_name}
+                                      </span>
+                                      {(c.heading_path.length > 0 ||
+                                        c.page_start) && (
+                                        <span className="ml-2 truncate text-xs text-ink-muted">
+                                          {c.heading_path.join(" · ")}
+                                          {c.page_start &&
+                                            ` (p.${c.page_start}${c.page_end && c.page_end !== c.page_start ? `-${c.page_end}` : ""})`}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span
+                                      title="검색 융합 순위 기반 표시 순서 — 절대 관련도 수치가 아니라 답변끼리는 비교할 수 없다"
+                                      className="shrink-0 text-xs font-medium text-primary"
+                                    >
+                                      [{c.index}]
                                     </span>
-                                  )}
-                                </div>
-                                <span className="shrink-0 text-xs font-medium text-primary">
-                                  [{c.index}]
-                                </span>
+                                  </div>
+                                </Link>
                               </li>
                             ))}
-                          </ul>
+                            </ul>
+                          )}
                         </div>
                       )}
                     </div>
@@ -370,6 +514,27 @@ export function RagSearchView() {
           </div>
         </div>
       </section>
+
+      <PromptDialog
+        open={renameTarget !== null}
+        title="대화 제목 수정"
+        fieldLabel="제목"
+        placeholder="대화 제목"
+        initialValue={renameTarget?.title ?? ""}
+        submitLabel="저장"
+        onSubmit={submitRename}
+        onCancel={() => setRenameTarget(null)}
+        busy={renameBusy}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="대화 삭제"
+        message={`"${deleteTarget?.title || "제목 없는 대화"}" 대화를 삭제할까요? 되돌릴 수 없습니다.`}
+        onConfirm={confirmDeleteConversation}
+        onCancel={() => setDeleteTarget(null)}
+        busy={deleteConvBusy}
+      />
     </div>
   );
 }

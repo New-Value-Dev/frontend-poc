@@ -40,12 +40,24 @@ export function getConversation(conversationId: number) {
   return api.get<RagConversationDetail>(`/rag/conversations/${conversationId}`);
 }
 
+/** `PATCH /rag/conversations/{id}` 대화 제목 수정 (본인 대화만) */
+export function renameConversation(conversationId: number, title: string) {
+  return api.patch<RagConversationSummary>(`/rag/conversations/${conversationId}`, {
+    title,
+  });
+}
+
+/** `DELETE /rag/conversations/{id}` 대화 삭제 (메시지 포함) */
+export function deleteConversation(conversationId: number) {
+  return api.delete<void>(`/rag/conversations/${conversationId}`);
+}
+
 export type RagStreamHandlers = {
   onMeta?: (meta: RagStreamMeta) => void;
   onDelta?: (text: string) => void;
   onCitations?: (citations: RagCitation[]) => void;
   onDone?: (done: RagStreamDone) => void;
-  onError?: (detail: string) => void;
+  onError?: (code: string, detail: string) => void;
 };
 
 /**
@@ -118,7 +130,7 @@ export async function queryStream(
           handlers.onDone?.(parsed);
           break;
         case "error":
-          handlers.onError?.(parsed.detail);
+          handlers.onError?.(parsed.code, parsed.detail);
           break;
       }
     }

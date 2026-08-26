@@ -17,10 +17,12 @@ export function IconMenu({
   items,
   ariaLabel,
   align = "end",
+  variant = "floating",
 }: {
   items: IconMenuItem[];
   ariaLabel: string;
   align?: "start" | "end";
+  variant?: "floating" | "plain";
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -53,7 +55,9 @@ export function IconMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={ariaLabel}
-        className={`grid h-7 w-7 place-items-center rounded-control bg-canvas/90 text-ink-muted shadow-sm hover:bg-surface hover:text-ink ${FOCUS_RING}`}
+        className={`grid h-7 w-7 place-items-center rounded-control text-ink-muted hover:bg-surface hover:text-ink ${
+          variant === "floating" ? "bg-canvas/90 shadow-sm" : ""
+        } ${FOCUS_RING}`}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
           <circle cx="12" cy="5" r="1.7" />

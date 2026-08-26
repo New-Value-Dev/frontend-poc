@@ -322,10 +322,11 @@ export type RagQueryResponse = {
   embedding_model: string;
   retrieved_count: number;
   latency_ms: number;
+  confidence: number | null;
 };
 
 export type RagStreamMeta = {
-  conversation_id: number;
+  conversation_id: number | null;
   embedding_model: string;
   retrieved_count: number;
 };
@@ -336,6 +337,7 @@ export type RagStreamDone = {
   provider: string;
   retrieved_count: number;
   latency_ms: number;
+  confidence: number | null;
 };
 
 export type RagHistoryItem = {
@@ -349,6 +351,7 @@ export type RagConversationSummary = {
   id: number;
   title: string | null;
   project_id: number | null;
+  scope: RagScope | null;
   created_at: string;
   updated_at: string;
 };
@@ -359,6 +362,7 @@ export type RagMessage = {
   content: string;
   citations: RagCitation[] | null;
   provider: string | null;
+  confidence: number | null;
   created_at: string;
 };
 

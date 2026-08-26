@@ -56,6 +56,106 @@ body {
 }
 
 /*
+ * RAG 챗봇 답변(react-markdown)용 최소 스타일. `@tailwindcss/typography`는 자체
+ * 회색조 팔레트를 강제해 브랜드 토큰과 어긋나므로 쓰지 않고, 이 프로젝트의
+ * 디자인 토큰(--color-*)만으로 직접 정의한다.
+ */
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+.markdown-content > :last-child {
+  margin-bottom: 0;
+}
+.markdown-content p {
+  margin: 0.5em 0;
+}
+.markdown-content strong {
+  font-weight: 600;
+}
+.markdown-content ul,
+.markdown-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.25em;
+}
+.markdown-content ul {
+  list-style: disc;
+}
+.markdown-content ol {
+  list-style: decimal;
+}
+.markdown-content li {
+  margin: 0.25em 0;
+}
+.markdown-content li > p {
+  margin: 0;
+}
+.markdown-content a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-content code {
+  border-radius: 0.25rem;
+  background: var(--color-surface-2);
+  padding: 0.125em 0.375em;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+.markdown-content pre {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-2);
+  padding: 0.75em 1em;
+}
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+}
+.markdown-content blockquote {
+  margin: 0.5em 0;
+  border-left: 3px solid var(--color-border);
+  padding-left: 0.75em;
+  color: var(--color-ink-muted);
+}
+.markdown-content hr {
+  margin: 0.75em 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
+.markdown-content table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9em;
+}
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--color-border);
+  padding: 0.375em 0.625em;
+  text-align: left;
+}
+.markdown-content th {
+  background: var(--color-surface-2);
+  font-weight: 600;
+}
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  margin: 0.75em 0 0.25em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.markdown-content h1 {
+  font-size: 1.15em;
+}
+.markdown-content h2 {
+  font-size: 1.1em;
+}
+.markdown-content h3 {
+  font-size: 1.05em;
+}
+
+/*
  * reduced-motion 설정을 전역에서 존중한다. Tailwind의 `animate-pulse`(스켈레톤)와
  * 모든 `transition-*` 유틸리티는 개별적으로 끌 수 없으므로 OS 설정이 일괄 차단한다.
  */

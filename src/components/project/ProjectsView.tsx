@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { listProjects, createProject, deleteProject } from "@/lib/projects";
+import { listProjects, createProject, updateProject, deleteProject } from "@/lib/projects";
 import { errorMessage, isAuthError } from "@/lib/api";
 import type { Project, Visibility } from "@/lib/types";
 import {
@@ -60,6 +60,12 @@ export function ProjectsView() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [infoTarget, setInfoTarget] = useState<Project | null>(null);
   const [membersTarget, setMembersTarget] = useState<Project | null>(null);
+
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const { user, loading: authLoading } = useAuth();
   function isOwner(p: Project) {
@@ -130,6 +136,34 @@ export function ProjectsView() {
       setNeedLogin(isAuthError(e));
     } finally {
       setDeleteBusy(false);
+    }
+  }
+
+  function startEditInfo() {
+    if (!infoTarget) return;
+    setEditName(infoTarget.name);
+    setEditDescription(infoTarget.description ?? "");
+    setEditError(null);
+    setEditingInfo(true);
+  }
+
+  async function onSaveInfo(e: FormEvent) {
+    e.preventDefault();
+    if (!infoTarget || !editName.trim()) return;
+    setEditSubmitting(true);
+    setEditError(null);
+    try {
+      const updated = await updateProject(String(infoTarget.id), {
+        name: editName.trim(),
+        description: editDescription.trim() || undefined,
+      });
+      setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setInfoTarget(updated);
+      setEditingInfo(false);
+    } catch (e) {
+      setEditError(errorMessage(e, "수정에 실패했습니다."));
+    } finally {
+      setEditSubmitting(false);
     }
   }
 
@@ -229,6 +263,17 @@ export function ProjectsView() {
                         items={[
                           { key: "info", label: "정보", onSelect: () => setInfoTarget(p) },
                           {
+                            key: "rename",
+                            label: "이름 · 설명 수정",
+                            onSelect: () => {
+                              setInfoTarget(p);
+                              setEditName(p.name);
+                              setEditDescription(p.description ?? "");
+                              setEditError(null);
+                              setEditingInfo(true);
+                            },
+                          },
+                          {
                             key: "members",
                             label: "멤버 · 공개 범위",
                             onSelect: () => setMembersTarget(p),
@@ -324,23 +369,62 @@ export function ProjectsView() {
 
       <Modal
         open={infoTarget !== null}
-        onClose={() => setInfoTarget(null)}
-        title="프로젝트 정보"
+        onClose={() => {
+          setInfoTarget(null);
+          setEditingInfo(false);
+        }}
+        title={editingInfo ? "이름 · 설명 수정" : "프로젝트 정보"}
         className="max-w-sm"
       >
-        {infoTarget && (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm">
-            <dt className="text-ink-muted">이름</dt>
-            <dd className="text-ink">{infoTarget.name}</dd>
-            <dt className="text-ink-muted">설명</dt>
-            <dd className="text-ink">{infoTarget.description || "설명 없음"}</dd>
-            <dt className="text-ink-muted">공개 범위</dt>
-            <dd className="text-ink">
-              <VisibilityBadge visibility={infoTarget.visibility} />
-            </dd>
-            <dt className="text-ink-muted">생성일</dt>
-            <dd className="text-ink">{fmtDate(infoTarget.created_at)}</dd>
-          </dl>
+        {infoTarget && editingInfo ? (
+          <form onSubmit={onSaveInfo} className="flex flex-col gap-4">
+            <Field label="프로젝트 이름" htmlFor="project-edit-name">
+              <Input
+                id="project-edit-name"
+                autoFocus
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+            </Field>
+            <Field label="설명" htmlFor="project-edit-description" hint="선택 항목입니다.">
+              <Input
+                id="project-edit-description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+              />
+            </Field>
+            {editError && <ErrorBanner message={editError} />}
+            <div className="mt-1 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditingInfo(false)}>
+                취소
+              </Button>
+              <Button type="submit" variant="dark" disabled={editSubmitting || !editName.trim()}>
+                {editSubmitting ? "저장 중…" : "저장"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          infoTarget && (
+            <div className="flex flex-col gap-4">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm">
+                <dt className="text-ink-muted">이름</dt>
+                <dd className="text-ink">{infoTarget.name}</dd>
+                <dt className="text-ink-muted">설명</dt>
+                <dd className="text-ink">{infoTarget.description || "설명 없음"}</dd>
+                <dt className="text-ink-muted">공개 범위</dt>
+                <dd className="text-ink">
+                  <VisibilityBadge visibility={infoTarget.visibility} />
+                </dd>
+                <dt className="text-ink-muted">생성일</dt>
+                <dd className="text-ink">{fmtDate(infoTarget.created_at)}</dd>
+              </dl>
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={startEditInfo}>
+                  이름 · 설명 수정
+                </Button>
+              </div>
+            </div>
+          )
         )}
       </Modal>
 

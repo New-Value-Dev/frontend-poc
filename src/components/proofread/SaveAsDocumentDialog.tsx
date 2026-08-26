@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { listProjects, listFolders } from "@/lib/projects";
 import { uploadDocument } from "@/lib/documents";
+import { createVersion } from "@/lib/versions";
 import { errorMessage } from "@/lib/api";
 import type { Document, Folder, Project } from "@/lib/types";
 import { flattenFolders } from "@/components/project/FolderTree";
@@ -14,11 +15,13 @@ const ROOT_VALUE = "__root__";
 export function SaveAsDocumentDialog({
   open,
   markdown,
+  originalMarkdown,
   onCancel,
   onSaved,
 }: {
   open: boolean;
   markdown: string;
+  originalMarkdown?: string;
   onCancel: () => void;
   onSaved: (document: Document) => void;
 }) {
@@ -57,17 +60,32 @@ export function SaveAsDocumentDialog({
       .finally(() => setLoadingFolders(false));
   }, [open, projectId]);
 
+  function toMarkdownFile(content: string, name: string) {
+    const blob = new Blob([content], { type: "text/markdown" });
+    return new File([blob], `${name}.md`, { type: "text/markdown" });
+  }
+
   async function handleSubmit() {
     if (projectId == null || !title.trim()) return;
     setBusy(true);
     setError(null);
+    const name = title.trim();
+    const hasCorrection = originalMarkdown != null && originalMarkdown !== markdown;
     try {
-      const blob = new Blob([markdown], { type: "text/markdown" });
-      const file = new File([blob], `${title.trim()}.md`, { type: "text/markdown" });
-      const res = await uploadDocument(String(projectId), file, {
+      const res = await uploadDocument(String(projectId), toMarkdownFile(hasCorrection ? originalMarkdown! : markdown, name), {
         folder_id: folderId === ROOT_VALUE ? undefined : Number(folderId),
-        name: title.trim(),
+        name,
       });
+      if (hasCorrection) {
+        try {
+          await createVersion(String(res.document.id), toMarkdownFile(markdown, name));
+        } catch (e) {
+          setError(
+            errorMessage(e, `"${name}"에 원본은 저장했지만 수정본 버전 추가에 실패했습니다.`),
+          );
+          return;
+        }
+      }
       onSaved(res.document);
     } catch (e) {
       setError(errorMessage(e, "문서 저장에 실패했습니다."));

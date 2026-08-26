@@ -4,7 +4,7 @@ import { initialsOf } from "@/lib/auth";
 import { FOCUS_RING } from "@/components/ui/primitives";
 
 /**
- * 백엔드가 내려주는 활동 종류는 12가지라 4가지 tone으로 묶는다. 배지 텍스트가 이미
+ * 백엔드가 내려주는 활동 종류는 13가지라 4가지 tone으로 묶는다. 배지 텍스트가 이미
  * kind 이름을 담고 있으므로 색은 개별 식별이 아니라 분류만 나타내면 된다. `analysis`에
  * 처음엔 amber를 썼지만 브랜드 레드와 ΔE 10.6으로 정상 시야 기준(15) 미만이라
  * `destructive`와 함께 쓰지 않도록 뺐다.
@@ -27,6 +27,7 @@ const KIND_TONE: Record<string, keyof typeof TONE> = {
   추천: "analysis",
   분석: "analysis",
   업로드: "change",
+  버전: "change",
   프로젝트: "change",
   폴더: "change",
   문서: "change",
