@@ -43,7 +43,6 @@ export default function AiOpsPage() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <PageHeader
         title="AI 운영 대시보드"
-        description="OpenAI 토큰 사용량·비용, RAG 챗봇 검색 키워드, LLM 호출 로그, 검색-답변 이력을 관리자만 볼 수 있습니다."
       />
 
       <div className="flex gap-1 overflow-x-auto border-b border-border">

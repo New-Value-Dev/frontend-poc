@@ -32,32 +32,7 @@ export function UsagePanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartGranularity, setChartGranularity] = useState<ChartGranularity>("day");
-  const [monthSummary, setMonthSummary] = useState<UsageSummary | null>(null);
-  const [yearSummary, setYearSummary] = useState<UsageSummary | null>(null);
   const [chartError, setChartError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setChartError(null);
-    getUsageSummary("month")
-      .then((m) => {
-        if (!cancelled) setMonthSummary(m);
-      })
-      .catch((e) => {
-        if (!cancelled) setChartError(errorMessage(e, "비용 추이를 불러오지 못했습니다."));
-      });
-    getUsageSummary("year")
-      .then((y) => {
-        if (!cancelled) setYearSummary(y);
-      })
-      .catch((e) => {
-        if (!cancelled) setChartError(errorMessage(e, "비용 추이를 불러오지 못했습니다."));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,61 +54,60 @@ export function UsagePanel() {
     };
   }, [period]);
 
+  const chartFetchPeriod: AdminUsagePeriod = chartGranularity === "day" ? "month" : "year";
+
   useEffect(() => {
     let cancelled = false;
-    getBillingSummary()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setChartError(null);
+    getBillingSummary(chartFetchPeriod)
       .then((b) => {
         if (!cancelled) setBilling(b);
       })
-      .catch(() => {
+      .catch((e) => {
+        if (!cancelled) setChartError(errorMessage(e, "비용 추이를 불러오지 못했습니다."));
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [chartFetchPeriod]);
 
   const byFeature = summary ? Object.entries(summary.by_feature) : [];
 
   const rate = billing?.usd_krw_rate ?? 0;
+  const dailyActual = billing?.daily_actual ?? [];
 
-  const dayPoints: CostPoint[] = monthSummary
-    ? Object.entries(monthSummary.by_day)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, bucket]) => ({
-          label: formatChartDay(date),
-          usd: bucket.estimated_cost_usd,
-          krw: bucket.estimated_cost_usd * rate,
-        }))
-    : [];
+  const dayPoints: CostPoint[] = dailyActual.map((d) => ({
+    label: formatChartDay(d.date),
+    usd: d.amount_usd,
+    krw: d.amount_krw ?? d.amount_usd * rate,
+  }));
 
-  const monthPoints: CostPoint[] = yearSummary
-    ? (() => {
-        const byMonth = new Map<string, number>();
-        for (const [date, bucket] of Object.entries(yearSummary.by_day)) {
-          const key = date.slice(0, 7);
-          byMonth.set(key, (byMonth.get(key) ?? 0) + bucket.estimated_cost_usd);
-        }
-        return [...byMonth.entries()]
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([month, usd]) => ({ label: `${Number(month.slice(5, 7))}월`, usd, krw: usd * rate }));
-      })()
-    : [];
+  const monthPoints: CostPoint[] = (() => {
+    const byMonth = new Map<string, number>();
+    for (const d of dailyActual) {
+      const key = d.date.slice(0, 7);
+      byMonth.set(key, (byMonth.get(key) ?? 0) + d.amount_usd);
+    }
+    return [...byMonth.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, usd]) => ({ label: `${Number(month.slice(5, 7))}월`, usd, krw: usd * rate }));
+  })();
 
-  const yearPoints: CostPoint[] = yearSummary
-    ? [
-        {
-          label: `${new Date().getFullYear()}년`,
-          usd: yearSummary.total.estimated_cost_usd,
-          krw: yearSummary.total.estimated_cost_usd * rate,
-        },
-      ]
-    : [];
+  const yearPoints: CostPoint[] =
+    dailyActual.length > 0
+      ? [
+          {
+            label: `${new Date().getFullYear()}년`,
+            usd: dailyActual.reduce((s, d) => s + d.amount_usd, 0),
+            krw: dailyActual.reduce((s, d) => s + (d.amount_krw ?? d.amount_usd * rate), 0),
+          },
+        ]
+      : [];
 
   const chartPoints =
     chartGranularity === "day" ? dayPoints : chartGranularity === "month" ? monthPoints : yearPoints;
-  const chartLoading =
-    (chartGranularity === "day" && monthSummary == null) ||
-    (chartGranularity !== "day" && yearSummary == null);
+  const chartLoading = billing == null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -223,6 +197,11 @@ export function UsagePanel() {
           />
         </CardHeader>
         <div className="p-5">
+          {!chartError && !chartLoading && billing?.cost_source === "estimated" && (
+            <p className="mb-3 text-xs text-ink-muted">
+              실제 청구액 연동 대기 중 — 아래는 로컬 추정치(계측 시작 이후만 집계)입니다
+            </p>
+          )}
           {chartError && <ErrorBanner message={chartError} />}
           {!chartError && chartLoading && (
             <p className="py-8 text-center text-sm text-ink-muted">불러오는 중…</p>

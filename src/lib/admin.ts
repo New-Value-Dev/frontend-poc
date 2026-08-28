@@ -31,9 +31,11 @@ export function listUsageLogs(filters?: {
   return api.get<LLMUsageLogPage>(`/admin/usage/logs?${params}`);
 }
 
-/** 실제 OpenAI Admin API 키가 설정돼 있지 않으면 actual_available=false, daily_actual은 항상 빈 배열 */
-export function getBillingSummary() {
-  return api.get<BillingSummary>("/admin/billing/summary", { timeoutMs: ADMIN_API_TIMEOUT_MS });
+/** 실제 OpenAI Admin API 키가 설정돼 있지 않으면 폴백 */
+export function getBillingSummary(chartPeriod: AdminUsagePeriod = "month") {
+  return api.get<BillingSummary>(`/admin/billing/summary?chart_period=${chartPeriod}`, {
+    timeoutMs: ADMIN_API_TIMEOUT_MS,
+  });
 }
 
 export function getSearchKeywords(period: AdminUsagePeriod = "month", top = 20) {
