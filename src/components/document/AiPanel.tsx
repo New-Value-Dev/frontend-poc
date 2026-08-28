@@ -18,7 +18,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const tabs = [
   { key: "proofread", label: "오타 검증" },
-  { key: "validation", label: "규정 검증" },
   { key: "compare", label: "문서 비교" },
   { key: "related", label: "관련 문서" },
 ] as const;
@@ -74,7 +73,6 @@ export function AiPanel({
             onApplied={onApplied}
           />
         )}
-        {active === "validation" && <Placeholder title="규정 검증" desc="관련 RULE 문서를 검색해 GPT로 위반·주의 사항을 검증합니다. (준비 중)" />}
         {active === "compare" && <ComparePanel docId={docId} />}
         {active === "related" && <Placeholder title="관련 문서" desc="문서 임베딩 기반 유사도로 연관 문서를 추천합니다. (준비 중)" />}
       </div>

@@ -16,6 +16,7 @@ import type {
   QuizSessionMode,
   QuizSessionResult,
   QuizSessionStartResponse,
+  QuizSessionStatus,
 } from "./types";
 
 /* 백엔드 app/api/v1/quiz.py 반영. */
@@ -123,6 +124,17 @@ export function startSession(quizBookId: string | number, mode: QuizSessionMode)
   return api.post<QuizSessionStartResponse>(`/quizzes/${quizBookId}/sessions`, { mode });
 }
 
+export function saveDraftAnswer(
+  quizBookId: string | number,
+  sessionId: number,
+  input: { question_id: number; user_answer: string },
+) {
+  return api.patch<{ draft_answers: Record<string, string> }>(
+    `/quizzes/${quizBookId}/sessions/${sessionId}/draft`,
+    input,
+  );
+}
+
 export function gradeAnswer(
   quizBookId: string | number,
   sessionId: number,
@@ -146,14 +158,28 @@ export function submitSession(
   );
 }
 
-export function listBookSessions(quizBookId: string | number) {
-  return api.get<QuizSession[]>(`/quizzes/${quizBookId}/sessions`);
+export function listBookSessions(
+  quizBookId: string | number,
+  filters?: { status?: QuizSessionStatus },
+) {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set("status", filters.status);
+  const query = params.toString();
+  return api.get<QuizSession[]>(`/quizzes/${quizBookId}/sessions${query ? `?${query}` : ""}`);
 }
 
 export function getSession(quizBookId: string | number, sessionId: string | number) {
   return api.get<QuizSessionResult>(`/quizzes/${quizBookId}/sessions/${sessionId}`);
 }
 
-export function listMySessions(projectId: string | number) {
-  return api.get<QuizSession[]>(`/projects/${projectId}/quiz-sessions`);
+export function listMySessions(
+  projectId: string | number,
+  filters?: { status?: QuizSessionStatus },
+) {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set("status", filters.status);
+  const query = params.toString();
+  return api.get<QuizSession[]>(
+    `/projects/${projectId}/quiz-sessions${query ? `?${query}` : ""}`,
+  );
 }

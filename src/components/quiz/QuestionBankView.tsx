@@ -54,6 +54,7 @@ const TYPE_OPTIONS = [
   { value: "SINGLE_CHOICE", label: "객관식" },
   { value: "TRUE_FALSE", label: "O/X" },
   { value: "SHORT_ANSWER", label: "단답형" },
+  { value: "ESSAY", label: "서술형" },
 ];
 
 const REVIEW_OPTIONS = [

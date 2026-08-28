@@ -38,6 +38,7 @@ function Overview() {
   const { scopeIds, setProjectId } = useQuizProject();
   const projectFilterActive = useProjectFilterActive();
   const [sessions, setSessions] = useState<QuizSession[]>([]);
+  const [inProgress, setInProgress] = useState<QuizSession[]>([]);
   const [books, setBooks] = useState<QuizBook[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +51,13 @@ function Overview() {
     setError(null);
     Promise.all([
       Promise.all(scopeIds.map((pid) => quizApi.listMySessions(pid))),
+      Promise.all(scopeIds.map((pid) => quizApi.listMySessions(pid, { status: "IN_PROGRESS" }))),
       Promise.all(scopeIds.map((pid) => quizApi.listBooks(pid))),
     ])
-      .then(([sessionLists, bookLists]) => {
+      .then(([sessionLists, inProgressLists, bookLists]) => {
         if (cancelled) return;
         setSessions(sessionLists.flat());
+        setInProgress(inProgressLists.flat());
         setBooks(bookLists.flat());
       })
       .catch((e) => {
@@ -109,6 +112,35 @@ function Overview() {
           <p className="mt-1 text-2xl font-semibold text-ink tnum">{books.length}</p>
         </Card>
       </div>
+
+      {inProgress.length > 0 && (
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle>진행 중</CardTitle>
+            <span className="text-xs text-ink-muted tnum">{inProgress.length}건</span>
+          </CardHeader>
+          <div className="flex flex-col divide-y divide-border">
+            {inProgress.map((s) => {
+              const book = bookById.get(s.quiz_book_id);
+              return (
+                <Link
+                  key={s.id}
+                  href={`/quiz/${s.quiz_book_id}/take`}
+                  className={`flex items-center justify-between gap-4 px-5 py-3.5 text-sm hover:bg-surface ${FOCUS_RING}`}
+                >
+                  <span className="min-w-0 flex-1 truncate text-ink">
+                    {book?.title ?? `문제집 #${s.quiz_book_id}`}
+                  </span>
+                  <span className="shrink-0 text-ink-muted">
+                    {formatDateTime(s.created_at)} 시작
+                  </span>
+                  <span className="shrink-0 font-medium text-primary">이어서 풀기 →</span>
+                </Link>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       <Card className="overflow-hidden">
         <CardHeader>

@@ -46,11 +46,25 @@ const nav: NavItem[] = [
       {
         href: "/quiz",
         label: "문제집",
-        match: (p) => p === "/quiz" || /^\/quiz\/(?!bank|take|results)/.test(p),
+        match: (p) =>
+          p === "/quiz" ||
+          (p.startsWith("/quiz/") &&
+            !p.startsWith("/quiz/bank") &&
+            !p.startsWith("/quiz/take") &&
+            !p.startsWith("/quiz/results") &&
+            !/^\/quiz\/\d+\/(take|result)/.test(p)),
       },
       { href: "/quiz/bank", label: "문제은행", match: (p) => p.startsWith("/quiz/bank") },
-      { href: "/quiz/take", label: "퀴즈 응시", match: (p) => p.startsWith("/quiz/take") },
-      { href: "/quiz/results", label: "결과 · 오답", match: (p) => p.startsWith("/quiz/results") },
+      {
+        href: "/quiz/take",
+        label: "퀴즈 응시",
+        match: (p) => p.startsWith("/quiz/take") || /^\/quiz\/\d+\/take/.test(p),
+      },
+      {
+        href: "/quiz/results",
+        label: "결과 · 오답",
+        match: (p) => p.startsWith("/quiz/results") || /^\/quiz\/\d+\/result/.test(p),
+      },
     ],
   },
 ];
@@ -61,6 +75,12 @@ const adminNav: NavItem[] = [
     label: "Embedding Lab",
     icon: <IconBeaker />,
     match: (p) => p.startsWith("/embedding-lab"),
+  },
+  {
+    href: "/ai-ops",
+    label: "AI 운영",
+    icon: <IconChart />,
+    match: (p) => p.startsWith("/ai-ops"),
   },
 ];
 
@@ -243,6 +263,13 @@ function IconQuiz() {
       <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1.3 1.1-1.3 1.9V14" />
       <circle cx="12" cy="17.5" r="0.9" fill="currentColor" stroke="none" />
       <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+function IconChart() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 20V10M12 20V4M20 20v-7" strokeLinecap="round" />
     </svg>
   );
 }

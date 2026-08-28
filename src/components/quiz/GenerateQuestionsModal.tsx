@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, ErrorBanner, Field, Input, FOCUS_RING } from "@/components/ui/primitives";
+import {
+  Button,
+  ErrorBanner,
+  Field,
+  Input,
+  InfoTooltip,
+  FOCUS_RING,
+} from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { errorMessage } from "@/lib/api";
@@ -19,6 +26,7 @@ const TYPE_OPTIONS: { value: QuizQuestionType; label: string }[] = [
   { value: "SINGLE_CHOICE", label: "객관식" },
   { value: "TRUE_FALSE", label: "O/X" },
   { value: "SHORT_ANSWER", label: "단답형" },
+  { value: "ESSAY", label: "서술형" },
 ];
 
 const MIXED_DIFFICULTY = "";
@@ -46,7 +54,12 @@ export function GenerateQuestionsModal({
   /** 프로젝트가 둘 이상일 때만 선택 드롭다운을 보여준다. */
   projects: { id: number; name: string }[];
   defaultProjectId: string;
-  fixedBook?: { id: number; title: string; project_id: number };
+  fixedBook?: {
+    id: number;
+    title: string;
+    project_id: number;
+    source_document_ids?: number[] | null;
+  };
 }) {
   const uid = useId();
   const [projectId, setProjectId] = useState(
@@ -70,7 +83,7 @@ export function GenerateQuestionsModal({
     if (!open) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProjectId(fixedBook ? String(fixedBook.project_id) : defaultProjectId);
-    setDocIds([]);
+    setDocIds(fixedBook?.source_document_ids ?? []);
     setCount(10);
     setTypes(TYPE_OPTIONS.map((t) => t.value));
     setDifficulty(MIXED_DIFFICULTY);
@@ -105,7 +118,7 @@ export function GenerateQuestionsModal({
     quizApi
       .listBooks(projectId)
       .then((list) => {
-        if (!cancelled) setBooks(list.filter((b) => !b.has_sessions));
+        if (!cancelled) setBooks(list.filter((b) => !b.has_sessions && b.can_manage));
       })
       .catch(() => {
         if (!cancelled) setBooks([]);
@@ -170,16 +183,22 @@ export function GenerateQuestionsModal({
       : 0;
 
   return (
-    <Modal open={open} onClose={onClose} title="AI로 문제 생성" className="max-w-lg">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          AI로 문제 생성
+          <InfoTooltip text="고른 문서를 처음부터 끝까지 훑어 골고루 문제를 냅니다." />
+        </span>
+      }
+      className="max-w-lg"
+    >
       <div className="flex flex-col gap-4">
         {error && <ErrorBanner message={error} />}
 
         {!job ? (
           <>
-            <p className="text-xs leading-relaxed text-ink-muted">
-              고른 문서를 처음부터 끝까지 훑어 골고루 문제를 냅니다.
-            </p>
-
             {!fixedBook && projects.length > 1 && (
               <div>
                 <p className="mb-1.5 text-xs font-medium text-ink">프로젝트</p>

@@ -169,7 +169,7 @@ function QuestionForm({
     initial?.type === "TRUE_FALSE" ? (initial.correct_answer as "O" | "X") : "O",
   );
   const [correctText, setCorrectText] = useState(
-    initial?.type === "SHORT_ANSWER" ? initial.correct_answer : "",
+    initial?.type === "SHORT_ANSWER" || initial?.type === "ESSAY" ? initial.correct_answer : "",
   );
   const [explanation, setExplanation] = useState(initial?.explanation ?? "");
   const [difficulty, setDifficulty] = useState<QuizDifficulty>(
@@ -197,7 +197,8 @@ function QuestionForm({
   const invalid =
     !text.trim() ||
     (type === "SINGLE_CHOICE" && (filledOptions.length < 2 || !options[correctIndex]?.trim())) ||
-    (type === "SHORT_ANSWER" && !correctAnswer);
+    (type === "SHORT_ANSWER" && !correctAnswer) ||
+    (type === "ESSAY" && !correctAnswer);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -288,6 +289,7 @@ function QuestionForm({
                   { value: "SINGLE_CHOICE", label: "객관식" },
                   { value: "TRUE_FALSE", label: "O/X" },
                   { value: "SHORT_ANSWER", label: "단답형" },
+                  { value: "ESSAY", label: "서술형" },
                 ]}
               />
             </div>
@@ -325,7 +327,7 @@ function QuestionForm({
 
         <Card className="overflow-hidden">
           <CardHeader>
-            <CardTitle>정답</CardTitle>
+            <CardTitle>{type === "ESSAY" ? "모범답안" : "정답"}</CardTitle>
             {type === "SINGLE_CHOICE" && (
               <span className="text-xs text-ink-muted">정답인 보기를 선택하세요 (최소 2개 작성)</span>
             )}
@@ -378,13 +380,29 @@ function QuestionForm({
               </Field>
             )}
 
-            <Field label="해설" htmlFor={`${uid}-explanation`}>
+            {type === "ESSAY" && (
+              <Field label="모범답안" htmlFor={`${uid}-answer`}>
+                <Textarea
+                  id={`${uid}-answer`}
+                  rows={4}
+                  value={correctText}
+                  onChange={(e) => setCorrectText(e.target.value)}
+                  placeholder="AI 채점의 기준이 될 모범답안을 작성하세요"
+                />
+              </Field>
+            )}
+
+            <Field label={type === "ESSAY" ? "채점기준" : "해설"} htmlFor={`${uid}-explanation`}>
               <Textarea
                 id={`${uid}-explanation`}
                 rows={3}
                 value={explanation}
                 onChange={(e) => setExplanation(e.target.value)}
-                placeholder="오답노트와 학습 모드에서 보여줄 설명"
+                placeholder={
+                  type === "ESSAY"
+                    ? "AI가 채점할 때 참고할 기준을 작성하세요"
+                    : "오답노트와 학습 모드에서 보여줄 설명"
+                }
               />
             </Field>
           </div>

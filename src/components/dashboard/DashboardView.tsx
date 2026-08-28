@@ -157,15 +157,15 @@ export function DashboardView() {
         ))}
       </Card>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
-        <Card className="lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="flex flex-col lg:col-span-2">
           <CardHeader>
             <CardTitle>주간 문서 처리량</CardTitle>
             <span className="text-xs text-ink-muted">
               최근 {weekly.length || 7}일, 총 <span className="tnum">{weeklyTotal}</span>건
             </span>
           </CardHeader>
-          <div className="p-4">
+          <div className="flex flex-1 flex-col justify-center p-4">
             {weekly.length > 0 ? (
               <AreaTrend data={weekly} labels={weekdayLabels(weekly.length)} />
             ) : (
@@ -174,11 +174,11 @@ export function DashboardView() {
           </div>
         </Card>
 
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle>문서 유형 분포</CardTitle>
           </CardHeader>
-          <div className="p-5">
+          <div className="flex flex-1 flex-col p-5">
             {types.length > 0 ? (
               <BarList items={types} />
             ) : (

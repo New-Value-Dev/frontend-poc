@@ -516,7 +516,9 @@ export type NotificationType =
   | "text_proofread.complete"
   | "text_proofread.fail"
   | "quiz_generate.complete"
-  | "quiz_generate.fail";
+  | "quiz_generate.fail"
+  | "quiz.assigned"
+  | "quiz.due_soon";
 
 export type NotificationItem = {
   id: number;
@@ -544,7 +546,7 @@ export type PushUnsubscribeRequest = { endpoint: string };
 
 /* --- Quiz --- */
 export type QuizDifficulty = "EASY" | "MEDIUM" | "HARD";
-export type QuizQuestionType = "SINGLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER";
+export type QuizQuestionType = "SINGLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER" | "ESSAY";
 export type QuizReviewStatus = "DRAFT" | "REVIEWED" | "APPROVED";
 export type QuizGenerationType = "AI" | "MANUAL";
 export type QuizSessionMode = "study" | "exam";
@@ -555,6 +557,7 @@ export type QuizQuestion = {
   id: number;
   project_id: number;
   source_document_id: number | null;
+  source_document_title: string | null;
   type: QuizQuestionType | string;
   text: string;
   options: string[] | null;
@@ -591,6 +594,13 @@ export type QuizQuestionPlay = {
   difficulty: QuizDifficulty | string;
 };
 
+export type QuizBookAssignee = {
+  user_id: number;
+  user_name: string | null;
+  user_email: string | null;
+  assigned_at: string;
+};
+
 export type QuizBook = {
   id: number;
   project_id: number;
@@ -603,7 +613,11 @@ export type QuizBook = {
   shuffle_options: boolean;
   allow_retake: boolean;
   reveal_answers: boolean;
+  due_at: string | null;
+  assignees: QuizBookAssignee[];
   has_sessions: boolean;
+  created_by_user_id: number | null;
+  can_manage: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -618,6 +632,8 @@ export type QuizBookCreate = {
   shuffle_options?: boolean;
   allow_retake?: boolean;
   reveal_answers?: boolean;
+  due_at?: string | null;
+  assignee_user_ids?: number[];
 };
 
 export type QuizBookUpdate = Partial<QuizBookCreate>;
@@ -656,6 +672,9 @@ export type QuizSessionStartResponse = {
   session_id: number;
   mode: QuizSessionMode | string;
   questions: QuizQuestionPlay[];
+  resumed: boolean;
+  answers: QuizAnswerRecord[];
+  draft_answers: Record<string, string>;
 };
 
 /** study 모드 즉시채점 응답 */
@@ -663,6 +682,8 @@ export type QuizAnswerGradeResult = {
   is_correct: boolean;
   correct_answer: string;
   explanation: string;
+  score: number | null;
+  feedback: string | null;
 };
 
 export type QuizAnswerRecord = {
@@ -673,12 +694,16 @@ export type QuizAnswerRecord = {
   is_correct: boolean;
   correct_answer: string | null;
   explanation: string | null;
+  score: number | null;
+  feedback: string | null;
 };
 
 export type QuizSession = {
   id: number;
   quiz_book_id: number;
   user_id: number;
+  user_name: string | null;
+  user_email: string | null;
   mode: QuizSessionMode | string;
   status: QuizSessionStatus | string;
   created_at: string;
@@ -692,3 +717,86 @@ export type QuizSessionResult = QuizSession & { answers: QuizAnswerRecord[] };
 
 /* --- Common --- */
 export type Paginated<T> = { items: T[]; total: number; page: number; limit: number };
+
+/* --- 관리자 AI 운영 대시보드 (admin.ts) — 백엔드 app/schemas/admin.py 반영 --- */
+export type AdminUsagePeriod = "day" | "month" | "year";
+
+export type UsageBucket = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  calls: number;
+  estimated_cost_usd: number;
+};
+
+export type AdminCostSource = "actual" | "estimated";
+
+export type UsageSummary = {
+  model: string;
+  period_start: string;
+  period_end: string;
+  source: AdminCostSource;
+  total: UsageBucket;
+  by_day: Record<string, UsageBucket>;
+  by_feature: Record<string, UsageBucket>;
+  status_counts: Record<string, number>;
+  avg_tokens_per_call: number;
+  avg_cost_per_call_usd: number;
+};
+
+export type LLMUsageLog = {
+  id: number;
+  feature: string;
+  user_id: number | null;
+  project_id: number | null;
+  model: string;
+  status: "success" | "fail" | string;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  latency_ms: number | null;
+  error_message: string | null;
+  created_at: string;
+};
+
+export type LLMUsageLogPage = { items: LLMUsageLog[]; total: number; page: number; size: number };
+
+export type BillingDaily = { date: string; amount_usd: number; amount_krw: number | null };
+
+export type BillingSummary = {
+  actual_available: boolean;
+  cost_source: AdminCostSource;
+  usd_krw_rate: number;
+  exchange_rate_as_of: string;
+  today_usd: number;
+  today_krw: number;
+  this_month_usd: number;
+  this_month_krw: number;
+  today_tokens: UsageBucket;
+  this_month_tokens: UsageBucket;
+  daily_actual: BillingDaily[];
+};
+
+export type KeywordCount = { keyword: string; count: number };
+
+export type KeywordRanking = {
+  period_start: string;
+  period_end: string;
+  items: KeywordCount[];
+};
+
+export type RagAdminLog = {
+  message_id: number;
+  conversation_id: number;
+  user_id: number;
+  question: string | null;
+  answer: string;
+  citations: Record<string, unknown>[] | null;
+  provider: string | null;
+  retrieved_count: number | null;
+  latency_ms: number | null;
+  confidence: number | null;
+  created_at: string;
+};
+
+export type RagAdminLogPage = { items: RagAdminLog[]; total: number; page: number; size: number };

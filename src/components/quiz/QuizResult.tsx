@@ -28,7 +28,7 @@ export function QuizResult({
   quizBookId: string;
   sessionId?: string;
 }) {
-  const { loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [book, setBook] = useState<QuizBook | null>(null);
   const [session, setSession] = useState<QuizSessionResult | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -98,7 +98,7 @@ export function QuizResult({
   if (!session) {
     return (
       <QuizPageShell>
-        <BackLink href={`/quiz/${book.id}`}>{book.title}</BackLink>
+        <BackLink href={`/quiz/${book.id}?tab=results`}>{book.title}</BackLink>
         {error ? (
           <ErrorBanner message={error} needLogin={needLogin} />
         ) : (
@@ -115,6 +115,7 @@ export function QuizResult({
   const wrong = session.answers.filter((a) => !a.is_correct);
   const passed = (session.score ?? 0) >= book.passing_score;
   const answersHidden = session.answers.length > 0 && session.answers.every((a) => a.correct_answer == null);
+  const viewingOthers = user != null && session.user_id !== user.id;
 
   const difficultyBreakdown = DIFFICULTY_ORDER.map((level) => {
     const records = session.answers.filter((a) => {
@@ -130,21 +131,23 @@ export function QuizResult({
     };
   }).filter((row) => row.count > 0);
 
-  const tags = Array.from(
+  const sourceTitles = Array.from(
     new Set(
-      session.answers.flatMap((a) => {
-        const q = a.question_id != null ? questionById.get(a.question_id) : undefined;
-        return q?.tags ?? [];
-      }),
+      session.answers
+        .map((a) => {
+          const q = a.question_id != null ? questionById.get(a.question_id) : undefined;
+          return q?.source_document_title ?? null;
+        })
+        .filter((t): t is string => t != null),
     ),
   );
-  const tagBreakdown = tags.map((tag) => {
+  const tagBreakdown = sourceTitles.map((title) => {
     const records = session.answers.filter((a) => {
       const q = a.question_id != null ? questionById.get(a.question_id) : undefined;
-      return q?.tags?.includes(tag) ?? false;
+      return q?.source_document_title === title;
     });
     return {
-      label: tag,
+      label: title,
       value: records.length
         ? Math.round((records.filter((a) => a.is_correct).length / records.length) * 100)
         : 0,
@@ -153,7 +156,23 @@ export function QuizResult({
 
   return (
     <QuizPageShell>
-      <BackLink href={`/quiz/${book.id}`}>{book.title}</BackLink>
+      <BackLink href={`/quiz/${book.id}?tab=results`}>{book.title}</BackLink>
+
+        {viewingOthers && (
+          <div className="flex items-center gap-3 rounded-panel border border-border bg-surface p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold text-ink">
+              {(session.user_name ?? session.user_email ?? "?").charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-ink">
+                {session.user_name ?? session.user_email ?? `사용자 #${session.user_id}`}
+              </p>
+              <p className="truncate text-xs text-ink-muted">
+                {session.user_name && session.user_email ? session.user_email : "응시자 결과"}
+              </p>
+            </div>
+          </div>
+        )}
 
         <Card className="flex flex-col items-center gap-2 p-8 text-center">
           <p className="text-sm text-ink-muted">{book.title}</p>
@@ -231,12 +250,14 @@ export function QuizResult({
         </Card>
 
         <div className="flex justify-center gap-2">
-          <Link href={`/quiz/${book.id}`} className={buttonClass("outline")}>
+          <Link href={`/quiz/${book.id}?tab=results`} className={buttonClass("outline")}>
             문제집으로
           </Link>
-          <Link href={`/quiz/${book.id}/take`} className={buttonClass("primary")}>
-            다시 응시
-          </Link>
+          {!viewingOthers && (
+            <Link href={`/quiz/${book.id}/take`} className={buttonClass("primary")}>
+              다시 응시
+            </Link>
+          )}
         </div>
     </QuizPageShell>
   );
@@ -271,7 +292,17 @@ function WrongAnswerRow({
           </p>
         )}
       </div>
-      {record.explanation && (
+      {record.score != null && (
+        <p className="mt-2.5 text-sm font-medium text-ink">
+          점수 <span className="tnum">{record.score}</span> / 100
+        </p>
+      )}
+      {record.score != null && record.feedback && (
+        <p className="mt-2 whitespace-pre-wrap rounded-control bg-surface p-3 text-sm leading-relaxed text-ink-muted">
+          {record.feedback}
+        </p>
+      )}
+      {record.score == null && record.explanation && (
         <p className="mt-2 whitespace-pre-wrap rounded-control bg-surface p-3 text-sm leading-relaxed text-ink-muted">
           {record.explanation}
         </p>

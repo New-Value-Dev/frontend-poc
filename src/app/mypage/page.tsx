@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getMyPageSummary } from "@/lib/mypage";
 import { errorMessage, isAuthError } from "@/lib/api";
 import { initialsOf } from "@/lib/auth";
-import type { MyPageSummary } from "@/lib/types";
+import { listProjects } from "@/lib/projects";
+import * as quizApi from "@/lib/quiz";
+import type { MyPageSummary, QuizBook, QuizSession } from "@/lib/types";
 import {
   PageHeader,
   Card,
@@ -14,20 +17,24 @@ import {
   Button,
   Tag,
   ErrorBanner,
+  FOCUS_RING,
 } from "@/components/ui/primitives";
 import { ActivityFeed } from "@/components/activity/ActivityFeed";
 import { PushToggle } from "@/components/notifications/PushToggle";
+import { formatDateTime } from "@/components/quiz/quizFormat";
 
 function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString("ko-KR") : "-";
 }
 
 export default function MyPage() {
-  const { loading: authLoading, logout } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const [summary, setSummary] = useState<MyPageSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needLogin, setNeedLogin] = useState(false);
+  const [inProgressSessions, setInProgressSessions] = useState<QuizSession[]>([]);
+  const [quizBooks, setQuizBooks] = useState<QuizBook[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,6 +57,32 @@ export default function MyPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [authLoading, load]);
+
+  // 진행 중인 퀴즈 위젯
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const projects = await listProjects();
+        const sessionLists = await Promise.all(
+          projects.map((p) => quizApi.listMySessions(p.id, { status: "IN_PROGRESS" })),
+        );
+        const bookLists = await Promise.all(projects.map((p) => quizApi.listBooks(p.id)));
+        if (cancelled) return;
+        setInProgressSessions(sessionLists.flat());
+        setQuizBooks(bookLists.flat());
+      } catch {
+        if (!cancelled) {
+          setInProgressSessions([]);
+          setQuizBooks([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user]);
 
   if (authLoading || (loading && !summary)) {
     return <MyPageSkeleton />;
@@ -119,6 +152,35 @@ export default function MyPage() {
       </Card>
 
       <PushToggle />
+
+      {inProgressSessions.length > 0 && (
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle>진행 중인 퀴즈</CardTitle>
+            <span className="text-xs text-ink-muted tnum">{inProgressSessions.length}건</span>
+          </CardHeader>
+          <div className="flex flex-col divide-y divide-border">
+            {inProgressSessions.map((s) => {
+              const book = quizBooks.find((b) => b.id === s.quiz_book_id);
+              return (
+                <Link
+                  key={s.id}
+                  href={`/quiz/${s.quiz_book_id}/take`}
+                  className={`flex items-center justify-between gap-4 px-5 py-3.5 text-sm hover:bg-surface ${FOCUS_RING}`}
+                >
+                  <span className="min-w-0 flex-1 truncate text-ink">
+                    {book?.title ?? `문제집 #${s.quiz_book_id}`}
+                  </span>
+                  <span className="shrink-0 text-ink-muted">
+                    {formatDateTime(s.created_at)} 시작
+                  </span>
+                  <span className="shrink-0 font-medium text-primary">이어서 풀기 →</span>
+                </Link>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

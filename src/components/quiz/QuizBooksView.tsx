@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { PageHeader, Card, buttonClass, ErrorBanner } from "@/components/ui/primitives";
+import { PageHeader, Card, buttonClass, ErrorBanner, TONE_STYLES } from "@/components/ui/primitives";
 import { ConfirmDialog } from "@/components/ui/Modal";
 import { IconMenu } from "@/components/ui/IconMenu";
 import { FilterBar } from "@/components/ui/FilterBar";
@@ -18,7 +18,7 @@ import {
   useQuizProject,
 } from "./QuizProjectProvider";
 import { QuizPageShell } from "./QuizPageShell";
-import { formatDate, formatScore, timeLimitLabel } from "./quizFormat";
+import { formatDate, formatDateTime, formatScore, isOverdue, timeLimitLabel } from "./quizFormat";
 
 export function QuizBooksView() {
   return (
@@ -258,6 +258,15 @@ function QuizBookCard({
                 🔒 수정 잠김
               </span>
             )}
+            {book.due_at && (
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                  isOverdue(book.due_at) ? TONE_STYLES.fail : TONE_STYLES.idle
+                }`}
+              >
+                마감 {formatDateTime(book.due_at)}
+              </span>
+            )}
           </div>
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             {book.description || "설명 없음"}
@@ -267,20 +276,22 @@ function QuizBookCard({
           ariaLabel={`${book.title} 메뉴`}
           items={[
             { key: "duplicate", label: "복제해서 편집", onSelect: onDuplicate, disabled },
-            { key: "delete", label: "삭제", tone: "danger", onSelect: onDelete, disabled },
+            {
+              key: "delete",
+              label: "삭제",
+              tone: "danger",
+              onSelect: onDelete,
+              disabled: disabled || !book.can_manage,
+            },
           ]}
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
-        <span className="rounded-full bg-surface-2 px-2.5 py-0.5">
-          {questionCount == null ? "…" : `${questionCount}문제`}
-        </span>
-        <span className="rounded-full bg-surface-2 px-2.5 py-0.5">
-          {timeLimitLabel(book.time_limit_minutes)}
-        </span>
-        <span className="rounded-full bg-surface-2 px-2.5 py-0.5">합격 {book.passing_score}점</span>
-      </div>
+      <p className="text-xs text-ink-muted">
+        {questionCount == null ? "…" : `${questionCount}문제`} ·{" "}
+        {timeLimitLabel(book.time_limit_minutes)} · 합격 {book.passing_score}점
+        {book.assignees.length > 0 && <> · {book.assignees.length}명 지정</>}
+      </p>
 
       {sources.length > 0 && (
         <p className="truncate text-xs text-ink-muted" title={sources.join(", ")}>
@@ -296,9 +307,11 @@ function QuizBookCard({
       )}
 
       <div className="mt-auto flex items-center gap-2 border-t border-border pt-3">
-        <Link href={`/quiz/${book.id}`} className={buttonClass("outline", "flex-1 justify-center")}>
-          문제집 관리
-        </Link>
+        {book.can_manage && (
+          <Link href={`/quiz/${book.id}`} className={buttonClass("outline", "flex-1 justify-center")}>
+            문제집 관리
+          </Link>
+        )}
         <Link
           href={`/quiz/${book.id}/take`}
           className={buttonClass(

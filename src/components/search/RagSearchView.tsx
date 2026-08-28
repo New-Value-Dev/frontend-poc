@@ -364,12 +364,15 @@ export function RagSearchView() {
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6">
           {loadingConversation ? (
-            <p className="text-sm text-ink-muted">대화를 불러오는 중…</p>
+            <div className="flex h-full items-center justify-center">
+              <p className="text-sm text-ink-muted">대화를 불러오는 중…</p>
+            </div>
           ) : messages.length === 0 ? (
-            <p className="text-sm text-ink-muted">
-              프로젝트 문서에 대해 무엇이든 물어보세요. 근거가 있는 답변만
-              인용과 함께 드립니다.
-            </p>
+            <div className="flex h-full items-center justify-center">
+              <p className="text-sm text-ink-muted">
+                프로젝트 문서에 대한 대화를 시작해보세요!
+              </p>
+            </div>
           ) : (
             <div className="flex flex-col gap-8">
               {messages.map((m, i) =>

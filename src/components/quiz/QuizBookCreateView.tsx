@@ -12,18 +12,28 @@ import {
   ErrorBanner,
   Field,
   Input,
+  InfoTooltip,
   Textarea,
   FOCUS_RING,
 } from "@/components/ui/primitives";
+import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { SearchInput } from "@/components/ui/FilterBar";
 import { errorMessage } from "@/lib/api";
 import { listDocuments } from "@/lib/documents";
+import { listProjectMembers } from "@/lib/projects";
 import * as quizApi from "@/lib/quiz";
-import type { Document } from "@/lib/types";
+import type { Document, ProjectMember } from "@/lib/types";
 import { ALL_PROJECTS, QuizProjectGate, useQuizProject } from "./QuizProjectProvider";
 import { QuizPageShell } from "./QuizPageShell";
-import { LockNotice, QuizToggleField } from "./QuizFields";
+import {
+  AssigneePicker,
+  AssigneeSearchPicker,
+  LockNotice,
+  QuizToggleField,
+  type SelectedAssignee,
+} from "./QuizFields";
+import { fromDatetimeLocalInput } from "./quizFormat";
 
 export function QuizBookCreateView() {
   return (
@@ -44,9 +54,15 @@ function CreateForm() {
   );
   const [documents, setDocuments] = useState<Document[]>([]);
   const [docQuery, setDocQuery] = useState("");
+  const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [memberQuery, setMemberQuery] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [sourceIds, setSourceIds] = useState<number[]>([]);
+  const [assignees, setAssignees] = useState<SelectedAssignee[]>([]);
+  const assigneeIds = assignees.map((a) => a.user_id);
+  const isPublicProject = projects.find((p) => String(p.id) === projectId)?.visibility === "public";
+  const [dueAt, setDueAt] = useState("");
   const [passingScore, setPassingScore] = useState(60);
   const [timeLimit, setTimeLimit] = useState("");
   const [shuffleQuestions, setShuffleQuestions] = useState(false);
@@ -70,6 +86,22 @@ function CreateForm() {
     };
   }, [projectId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAssignees([]);
+    listProjectMembers(projectId)
+      .then((list) => {
+        if (!cancelled) setMembers(list.filter((m) => m.status === "active"));
+      })
+      .catch(() => {
+        if (!cancelled) setMembers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
@@ -86,6 +118,8 @@ function CreateForm() {
         shuffle_options: shuffleOptions,
         allow_retake: allowRetake,
         reveal_answers: revealAnswers,
+        due_at: fromDatetimeLocalInput(dueAt),
+        assignee_user_ids: assigneeIds,
       });
       router.push(`/quiz/${created.id}`);
     } catch (err) {
@@ -148,15 +182,15 @@ function CreateForm() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card className="overflow-hidden">
             <CardHeader>
-              <CardTitle>출제 범위</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>출제 범위</CardTitle>
+                <InfoTooltip text="문제은행에서 문항을 고를 때 기본 필터로 쓰입니다. 비워 두면 전체 문서가 대상입니다." />
+              </div>
               <span className="text-xs text-ink-muted">
                 {sourceIds.length > 0 ? `${sourceIds.length}개 선택` : "선택"}
               </span>
             </CardHeader>
             <div className="flex flex-col gap-2.5 p-5">
-              <p className="text-xs text-ink-muted">
-                문제은행에서 문항을 고를 때 기본 필터로 쓰입니다. 비워 두면 전체 문서가 대상입니다.
-              </p>
               {documents.length > 8 && (
                 <SearchInput
                   value={docQuery}
@@ -248,6 +282,46 @@ function CreateForm() {
             </div>
           </Card>
         </div>
+
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>응시자 지정</CardTitle>
+              <InfoTooltip text="지정한 사람에게 즉시 알림이 발송되고, 마감기한이 임박하면 아직 응시하지 않은 지정자에게 리마인더가 갑니다. 비워 두면 프로젝트 멤버 누구나 자유롭게 응시할 수 있습니다." />
+            </div>
+            <span className="text-xs text-ink-muted">
+              {assigneeIds.length > 0 ? `${assigneeIds.length}명 선택` : "선택 안 함"}
+            </span>
+          </CardHeader>
+          <div className="flex flex-col gap-4 p-5">
+            <Field label="마감기한" htmlFor={`${uid}-due`}>
+              <DateTimePicker id={`${uid}-due`} value={dueAt} onChange={setDueAt} />
+            </Field>
+            {isPublicProject ? (
+              <AssigneeSearchPicker
+                selected={assignees}
+                onAdd={(user) => setAssignees((prev) => [...prev, user])}
+                onRemove={(userId) =>
+                  setAssignees((prev) => prev.filter((a) => a.user_id !== userId))
+                }
+              />
+            ) : (
+              <AssigneePicker
+                members={members}
+                selectedUserIds={assigneeIds}
+                onToggle={(member) =>
+                  setAssignees((prev) =>
+                    prev.some((a) => a.user_id === member.user_id)
+                      ? prev.filter((a) => a.user_id !== member.user_id)
+                      : [...prev, { user_id: member.user_id, name: member.name, email: member.email }],
+                  )
+                }
+                query={memberQuery}
+                onQueryChange={setMemberQuery}
+              />
+            )}
+          </div>
+        </Card>
 
         <LockNotice />
 

@@ -105,6 +105,27 @@ export function SectionTitle({ children }: { children: ReactNode }) {
   return <h2 className="text-base font-semibold text-ink">{children}</h2>;
 }
 
+export function InfoTooltip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <span
+        tabIndex={0}
+        role="button"
+        aria-label="설명 보기"
+        className={`inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full text-xs leading-none text-ink-muted hover:text-ink ${FOCUS_RING}`}
+      >
+        ⓘ
+      </span>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-0 top-full z-20 mt-1.5 w-56 rounded-control border border-border bg-canvas p-2 text-xs leading-relaxed text-ink-muted opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
 const INPUT_FOCUS = "outline-none focus:border-primary focus:ring-2 focus:ring-primary/25";
 
 export type ButtonVariant = "primary" | "outline" | "ghost" | "dark";
@@ -328,6 +349,8 @@ const NOTIFICATION_LABELS: Record<NotificationType, string> = {
   "text_proofread.fail": "맞춤법 검사 실패",
   "quiz_generate.complete": "문제 생성 완료",
   "quiz_generate.fail": "문제 생성 실패",
+  "quiz.assigned": "퀴즈 배정",
+  "quiz.due_soon": "마감 임박",
 };
 
 export function notificationTypeLabel(type: NotificationType | string): string {
@@ -448,6 +471,7 @@ const QUESTION_TYPE_STYLES: Record<QuizQuestionType, { label: string; className:
   SINGLE_CHOICE: { label: "객관식", className: "bg-sky-50 text-sky-700" },
   TRUE_FALSE: { label: "O/X", className: "bg-violet-50 text-violet-700" },
   SHORT_ANSWER: { label: "단답형", className: "bg-surface-2 text-ink-muted" },
+  ESSAY: { label: "서술형", className: "bg-amber-50 text-amber-700" },
 };
 
 export function questionTypeLabel(type: QuizQuestionType | string): string {
@@ -479,6 +503,29 @@ export function reviewStatusLabel(status: QuizReviewStatus | string): string {
 
 export function ReviewStatusBadge({ status }: { status: QuizReviewStatus | string }) {
   const known = REVIEW_STATUS_STYLES[status as QuizReviewStatus];
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        TONE_STYLES[known?.tone ?? "idle"]
+      }`}
+    >
+      {known?.label ?? status}
+    </span>
+  );
+}
+
+/* 관리자 AI 운영 대시보드의 LLM 호출 성공/실패 상태. */
+const LLM_CALL_STATUS_STYLES: Record<string, { label: string; tone: StatusTone }> = {
+  success: { label: "성공", tone: "done" },
+  fail: { label: "실패", tone: "fail" },
+};
+
+export function llmCallStatusLabel(status: string): string {
+  return LLM_CALL_STATUS_STYLES[status]?.label ?? status;
+}
+
+export function LLMCallStatusBadge({ status }: { status: string }) {
+  const known = LLM_CALL_STATUS_STYLES[status];
   return (
     <span
       className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${

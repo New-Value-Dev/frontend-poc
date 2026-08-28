@@ -20,6 +20,21 @@ export function formatDate(iso: string): string {
   });
 }
 
+export function toDatetimeLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function fromDatetimeLocalInput(value: string): string | null {
+  return value ? new Date(value).toISOString() : null;
+}
+
+export function isOverdue(dueAt: string | null): boolean {
+  return dueAt != null && new Date(dueAt).getTime() < Date.now();
+}
+
 export function formatScore(score: number | null | undefined): string {
   return score == null ? "-" : String(Math.round(score));
 }

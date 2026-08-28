@@ -67,15 +67,9 @@ export const TextEditor = forwardRef<
     getMarkdown: () => editorRef.current?.getMarkdown() ?? "",
     getText: () => {
       if (typeof document === "undefined") return "";
-      const html = editorRef.current?.getHTML() ?? "";
-      // textContent는 블록 태그 경계에 구분자를 넣지 않아 문단이 그대로 붙어버린다.
-      // 블록 종료 태그를 줄바꿈으로 바꿔서 문단 구분을 보존한 뒤 텍스트를 뽑는다.
-      const withBreaks = html
-        .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, "\n")
-        .replace(/<br\s*\/?>/gi, "\n");
       const div = document.createElement("div");
-      div.innerHTML = withBreaks;
-      return (div.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+      div.innerHTML = editorRef.current?.getHTML() ?? "";
+      return div.textContent ?? "";
     },
     setMarkdown: (markdown: string) => {
       editorRef.current?.setMarkdown(markdown);

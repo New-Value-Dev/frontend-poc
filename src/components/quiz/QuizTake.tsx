@@ -9,6 +9,8 @@ import {
   DifficultyBadge,
   ErrorBanner,
   FOCUS_RING,
+  Textarea,
+  TONE_STYLES,
 } from "@/components/ui/primitives";
 import { ConfirmDialog } from "@/components/ui/Modal";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -16,12 +18,13 @@ import { errorMessage, isAuthError } from "@/lib/api";
 import * as quizApi from "@/lib/quiz";
 import type {
   QuizAnswerGradeResult,
+  QuizAnswerRecord,
   QuizBook,
   QuizQuestionPlay,
   QuizSessionMode,
 } from "@/lib/types";
 import { QuizPageShell } from "./QuizPageShell";
-import { timeLimitLabel } from "./quizFormat";
+import { formatDateTime, isOverdue, timeLimitLabel } from "./quizFormat";
 
 function formatClock(totalSeconds: number): string {
   const m = Math.floor(Math.max(totalSeconds, 0) / 60);
@@ -48,6 +51,8 @@ export function QuizTake({ quizBookId }: { quizBookId: string }) {
     id: number;
     mode: QuizSessionMode;
     questions: QuizQuestionPlay[];
+    answers: QuizAnswerRecord[];
+    draftAnswers: Record<string, string>;
   } | null>(null);
 
   useEffect(() => {
@@ -97,6 +102,7 @@ export function QuizTake({ quizBookId }: { quizBookId: string }) {
     return (
       <StartScreen
         book={book}
+        currentUserId={user.id}
         onStarted={(started) => setSession(started)}
         error={error}
         onError={setError}
@@ -110,22 +116,34 @@ export function QuizTake({ quizBookId }: { quizBookId: string }) {
       sessionId={session.id}
       mode={session.mode}
       questions={session.questions}
+      resumedAnswers={session.answers}
+      draftAnswers={session.draftAnswers}
     />
   );
 }
 
 function StartScreen({
   book,
+  currentUserId,
   onStarted,
   error,
   onError,
 }: {
   book: QuizBook;
-  onStarted: (s: { id: number; mode: QuizSessionMode; questions: QuizQuestionPlay[] }) => void;
+  currentUserId: number;
+  onStarted: (s: {
+    id: number;
+    mode: QuizSessionMode;
+    questions: QuizQuestionPlay[];
+    answers: QuizAnswerRecord[];
+    draftAnswers: Record<string, string>;
+  }) => void;
   error: string | null;
   onError: (message: string | null) => void;
 }) {
   const [mode, setMode] = useState<QuizSessionMode>("study");
+  const isAssignedToMe = book.assignees.some((a) => a.user_id === currentUserId);
+  const overdue = isOverdue(book.due_at);
   const [starting, setStarting] = useState(false);
 
   async function start() {
@@ -142,6 +160,8 @@ function StartScreen({
         id: res.session_id,
         mode: (res.mode as QuizSessionMode) ?? mode,
         questions: res.questions,
+        answers: res.answers,
+        draftAnswers: res.draft_answers,
       });
     } catch (e) {
       onError(errorMessage(e, "응시를 시작하지 못했습니다."));
@@ -157,6 +177,17 @@ function StartScreen({
 
       <div className="mx-auto w-full max-w-2xl">
         <Card className="flex flex-col gap-5 p-6">
+          {isAssignedToMe && (
+            <p
+              className={`rounded-control p-3 text-xs leading-relaxed ${
+                overdue ? TONE_STYLES.fail : TONE_STYLES.active
+              }`}
+            >
+              {overdue ? "마감이 지났습니다" : "이 퀴즈에 배정되었습니다"}
+              {book.due_at && <> — 마감 {formatDateTime(book.due_at)}</>}
+            </p>
+          )}
+
           <div>
             <h1 className="text-lg font-semibold text-ink">{book.title}</h1>
             {book.description && (
@@ -254,16 +285,48 @@ function PlaySession({
   sessionId,
   mode,
   questions,
+  resumedAnswers,
+  draftAnswers,
 }: {
   book: QuizBook;
   sessionId: number;
   mode: QuizSessionMode;
   questions: QuizQuestionPlay[];
+  resumedAnswers: QuizAnswerRecord[];
+  draftAnswers: Record<string, string>;
 }) {
   const router = useRouter();
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [feedback, setFeedback] = useState<Record<number, QuizAnswerGradeResult>>({});
+  const [answers, setAnswers] = useState<Record<number, string>>(() => {
+    const init: Record<number, string> = {};
+    for (const r of resumedAnswers) {
+      if (r.question_id != null) init[r.question_id] = r.user_answer;
+    }
+    for (const [qid, value] of Object.entries(draftAnswers)) {
+      init[Number(qid)] = value;
+    }
+    return init;
+  });
+  const [feedback, setFeedback] = useState<Record<number, QuizAnswerGradeResult>>(() => {
+    const init: Record<number, QuizAnswerGradeResult> = {};
+    for (const r of resumedAnswers) {
+      if (r.question_id != null) {
+        init[r.question_id] = {
+          is_correct: r.is_correct,
+          correct_answer: r.correct_answer ?? "",
+          explanation: r.explanation ?? "",
+          score: r.score,
+          feedback: r.feedback,
+        };
+      }
+    }
+    return init;
+  });
+  const [index, setIndex] = useState(() => {
+    const answeredIds = new Set(Object.keys(answers).map(Number));
+    if (answeredIds.size === 0) return 0;
+    const firstUnanswered = questions.findIndex((q) => !answeredIds.has(q.id));
+    return firstUnanswered === -1 ? 0 : firstUnanswered;
+  });
   const [grading, setGrading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
@@ -325,9 +388,29 @@ function PlaySession({
   const currentFeedback = feedback[question.id];
   const locked = mode === "study" && currentFeedback !== undefined;
 
+  const [pendingDraft, setPendingDraft] = useState<{ questionId: number; value: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (mode !== "exam" || !pendingDraft) return;
+    const { questionId, value } = pendingDraft;
+    const timer = setTimeout(() => {
+      void quizApi
+        .saveDraftAnswer(book.id, sessionId, { question_id: questionId, user_answer: value })
+        .catch(() => {});
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [pendingDraft, mode, book.id, sessionId]);
+
+  function queueDraftSave(questionId: number, value: string) {
+    if (mode !== "exam") return;
+    setPendingDraft({ questionId, value });
+  }
+
   async function selectAnswer(value: string) {
     if (locked || grading) return;
     setAnswers((prev) => ({ ...prev, [question.id]: value }));
+    queueDraftSave(question.id, value);
 
     if (mode !== "study") return;
     setGrading(true);
@@ -346,6 +429,7 @@ function PlaySession({
   }
 
   const isShortAnswer = question.type === "SHORT_ANSWER";
+  const isEssay = question.type === "ESSAY";
   const [draft, setDraft] = useState("");
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -457,6 +541,7 @@ function PlaySession({
                     setDraft(e.target.value);
                     if (mode === "exam") {
                       setAnswers((prev) => ({ ...prev, [question.id]: e.target.value }));
+                      queueDraftSave(question.id, e.target.value);
                     }
                   }}
                   disabled={locked}
@@ -481,23 +566,69 @@ function PlaySession({
                 )}
               </div>
             )}
+
+            {isEssay && (
+              <div className="flex flex-col gap-2">
+                <Textarea
+                  rows={6}
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    if (mode === "exam") {
+                      setAnswers((prev) => ({ ...prev, [question.id]: e.target.value }));
+                      queueDraftSave(question.id, e.target.value);
+                    }
+                  }}
+                  disabled={locked}
+                  placeholder="답을 서술하세요"
+                  className={
+                    currentFeedback
+                      ? currentFeedback.is_correct
+                        ? "border-emerald-300 bg-emerald-50"
+                        : "border-primary/40 bg-primary-soft"
+                      : ""
+                  }
+                />
+                {mode === "study" && (
+                  <Button
+                    variant="outline"
+                    className="self-end whitespace-nowrap"
+                    onClick={() => void selectAnswer(draft)}
+                    disabled={locked || grading || !draft.trim()}
+                  >
+                    {grading ? "채점 중…" : "채점하기"}
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           {currentFeedback && (
             <div className="mt-4 rounded-control bg-surface p-3.5 text-sm">
-              <p
-                className={`font-medium ${
-                  currentFeedback.is_correct ? "text-emerald-700" : "text-primary"
-                }`}
-              >
-                {currentFeedback.is_correct ? "정답입니다" : "오답입니다"}
-                {!currentFeedback.is_correct && question.type !== "SINGLE_CHOICE" && (
-                  <span className="ml-1 whitespace-pre-wrap font-normal text-ink-muted">
-                    (정답: {currentFeedback.correct_answer})
-                  </span>
-                )}
-              </p>
-              {currentFeedback.explanation && (
+              {currentFeedback.score != null ? (
+                <p className="font-medium text-ink">
+                  점수 <span className="tnum">{currentFeedback.score}</span> / 100
+                </p>
+              ) : (
+                <p
+                  className={`font-medium ${
+                    currentFeedback.is_correct ? "text-emerald-700" : "text-primary"
+                  }`}
+                >
+                  {currentFeedback.is_correct ? "정답입니다" : "오답입니다"}
+                  {!currentFeedback.is_correct && question.type !== "SINGLE_CHOICE" && (
+                    <span className="ml-1 whitespace-pre-wrap font-normal text-ink-muted">
+                      (정답: {currentFeedback.correct_answer})
+                    </span>
+                  )}
+                </p>
+              )}
+              {currentFeedback.score != null && currentFeedback.feedback && (
+                <p className="mt-1.5 whitespace-pre-wrap leading-relaxed text-ink-muted">
+                  {currentFeedback.feedback}
+                </p>
+              )}
+              {currentFeedback.score == null && currentFeedback.explanation && (
                 <p className="mt-1.5 whitespace-pre-wrap leading-relaxed text-ink-muted">
                   {currentFeedback.explanation}
                 </p>
@@ -523,7 +654,11 @@ function PlaySession({
             </Button>
           ) : (
             <Button onClick={() => setConfirmSubmit(true)} disabled={submitting}>
-              {submitting ? "제출 중…" : "제출"}
+              {submitting
+                ? questions.some((q) => q.type === "ESSAY")
+                  ? "채점 중…"
+                  : "제출 중…"
+                : "제출"}
             </Button>
           )}
         </div>

@@ -19,19 +19,37 @@ import {
   QuestionTypeBadge,
   DifficultyBadge,
   ReviewStatusBadge,
+  TONE_STYLES,
 } from "@/components/ui/primitives";
 import { Modal, ConfirmDialog } from "@/components/ui/Modal";
+import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { IconMenu } from "@/components/ui/IconMenu";
 import { SearchInput } from "@/components/ui/FilterBar";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { errorMessage, isAuthError } from "@/lib/api";
 import { listDocuments } from "@/lib/documents";
+import { listProjectMembers } from "@/lib/projects";
 import * as quizApi from "@/lib/quiz";
-import type { Document, QuizBook, QuizQuestion, QuizSession } from "@/lib/types";
+import type { Document, ProjectMember, QuizBook, QuizQuestion, QuizSession } from "@/lib/types";
 import { QuizPageShell } from "./QuizPageShell";
 import { GenerateQuestionsModal } from "./GenerateQuestionsModal";
-import { LockedBanner, QuizToggleField } from "./QuizFields";
-import { formatDateTime, formatScore, sourceLabel } from "./quizFormat";
+import {
+  AssigneePicker,
+  AssigneeSearchPicker,
+  LockedBanner,
+  ManageOnlyNotice,
+  QuizToggleField,
+  type SelectedAssignee,
+} from "./QuizFields";
+import { useQuizProject } from "./QuizProjectProvider";
+import {
+  formatDateTime,
+  formatScore,
+  fromDatetimeLocalInput,
+  isOverdue,
+  sourceLabel,
+  toDatetimeLocalInput,
+} from "./quizFormat";
 
 const tabs = [
   { key: "questions", label: "문제" },
@@ -40,10 +58,32 @@ const tabs = [
 ] as const;
 type TabKey = (typeof tabs)[number]["key"];
 
-export function QuizBookDetail({ quizBookId }: { quizBookId: string }) {
+function isTabKey(value: string | null): value is TabKey {
+  return tabs.some((t) => t.key === value);
+}
+
+export function QuizBookDetail({
+  quizBookId,
+  initialTab,
+}: {
+  quizBookId: string;
+  initialTab?: string;
+}) {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [active, setActive] = useState<TabKey>("questions");
+  const normalizedInitialTab = isTabKey(initialTab ?? null) ? (initialTab as TabKey) : "questions";
+  const [active, setActive] = useState<TabKey>(normalizedInitialTab);
+  const [prevInitialTab, setPrevInitialTab] = useState(normalizedInitialTab);
+  if (normalizedInitialTab !== prevInitialTab) {
+    setPrevInitialTab(normalizedInitialTab);
+    setActive(normalizedInitialTab);
+  }
+
+  function selectTab(key: TabKey) {
+    setActive(key);
+    const query = key === "questions" ? "" : `?tab=${key}`;
+    router.replace(`/quiz/${quizBookId}${query}`, { scroll: false });
+  }
   const [book, setBook] = useState<QuizBook | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -52,26 +92,35 @@ export function QuizBookDetail({ quizBookId }: { quizBookId: string }) {
   const [needLogin, setNeedLogin] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [b, qs] = await Promise.all([
-        quizApi.getBook(quizBookId),
-        quizApi.listBookQuestions(quizBookId),
-      ]);
-      setBook(b);
-      setQuestions(qs);
-      listDocuments(String(b.project_id))
-        .then(setDocuments)
-        .catch(() => setDocuments([]));
-    } catch (e) {
-      setError(errorMessage(e, "문제집을 불러오지 못했습니다."));
-      setNeedLogin(isAuthError(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [quizBookId]);
+  /**
+   * `silent`가 없으면 `loading`을 켜서 전체 화면을 비웠다가 다시 그린다 — 최초 진입용.
+   * 저장/변경 후 재조회(`onSaved`/`onChanged`)는 `silent: true`로 불러 화면을 유지해야
+   * `SettingsTab` 등 하위 탭이 리마운트되지 않고, "저장됐습니다" 같은 로컬 확인 상태가
+   * 리셋되지 않는다.
+   */
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
+      setError(null);
+      try {
+        const [b, qs] = await Promise.all([
+          quizApi.getBook(quizBookId),
+          quizApi.listBookQuestions(quizBookId),
+        ]);
+        setBook(b);
+        setQuestions(qs);
+        listDocuments(String(b.project_id))
+          .then(setDocuments)
+          .catch(() => setDocuments([]));
+      } catch (e) {
+        setError(errorMessage(e, "문제집을 불러오지 못했습니다."));
+        setNeedLogin(isAuthError(e));
+      } finally {
+        if (!opts?.silent) setLoading(false);
+      }
+    },
+    [quizBookId],
+  );
 
   useEffect(() => {
     if (authLoading) return;
@@ -110,11 +159,22 @@ export function QuizBookDetail({ quizBookId }: { quizBookId: string }) {
       <PageHeader
         title={book.title}
         titleBadge={
-          book.has_sessions ? (
-            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-muted">
-              🔒 수정 잠김
-            </span>
-          ) : undefined
+          <>
+            {book.has_sessions && (
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-muted">
+                🔒 수정 잠김
+              </span>
+            )}
+            {book.due_at && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  isOverdue(book.due_at) ? TONE_STYLES.fail : TONE_STYLES.idle
+                }`}
+              >
+                마감 {formatDateTime(book.due_at)}
+              </span>
+            )}
+          </>
         }
         description={book.description ?? undefined}
         actions={
@@ -143,7 +203,7 @@ export function QuizBookDetail({ quizBookId }: { quizBookId: string }) {
           <button
             key={t.key}
             type="button"
-            onClick={() => setActive(t.key)}
+            onClick={() => selectTab(t.key)}
             aria-current={active === t.key ? "page" : undefined}
             className={`shrink-0 whitespace-nowrap rounded-t-control px-3 py-2 text-sm transition-colors ${FOCUS_RING} focus-visible:ring-offset-0 ${
               active === t.key
@@ -164,11 +224,15 @@ export function QuizBookDetail({ quizBookId }: { quizBookId: string }) {
           book={book}
           questions={questions}
           documentNames={documentNames}
-          onChanged={load}
+          onChanged={() => load({ silent: true })}
         />
       )}
       {active === "settings" && (
-        <SettingsTab book={book} questionCount={questions.length} onSaved={load} />
+        <SettingsTab
+          book={book}
+          questionCount={questions.length}
+          onSaved={() => load({ silent: true })}
+        />
       )}
       {active === "results" && <ResultsTab book={book} currentUserId={user?.id ?? null} />}
     </QuizPageShell>
@@ -194,6 +258,7 @@ function QuestionsTab({
   const [error, setError] = useState<string | null>(null);
 
   const locked = book.has_sessions;
+  const canManage = book.can_manage;
 
   async function handleRemove() {
     if (!removeTarget) return;
@@ -247,7 +312,7 @@ function QuestionsTab({
                       label: "문제집에서 제외",
                       tone: "danger",
                       onSelect: () => setRemoveTarget(q),
-                      disabled: locked || busy,
+                      disabled: locked || !canManage || busy,
                     },
                   ]}
                 />
@@ -262,8 +327,10 @@ function QuestionsTab({
         </div>
       </Card>
 
+      {!canManage && !locked && <ManageOnlyNotice />}
+
       <div className="flex flex-wrap gap-2">
-        {locked ? (
+        {locked || !canManage ? (
           <Button variant="outline" disabled>
             + 직접 작성
           </Button>
@@ -272,10 +339,10 @@ function QuestionsTab({
             + 직접 작성
           </Link>
         )}
-        <Button variant="outline" onClick={() => setShowBank(true)} disabled={locked}>
+        <Button variant="outline" onClick={() => setShowBank(true)} disabled={locked || !canManage}>
           + 문제은행에서 추가
         </Button>
-        <Button variant="outline" onClick={() => setShowGenerate(true)} disabled={locked}>
+        <Button variant="outline" onClick={() => setShowGenerate(true)} disabled={locked || !canManage}>
           AI로 생성
         </Button>
       </div>
@@ -298,7 +365,12 @@ function QuestionsTab({
         onGenerated={() => void onChanged()}
         projects={[]}
         defaultProjectId={String(book.project_id)}
-        fixedBook={{ id: book.id, title: book.title, project_id: book.project_id }}
+        fixedBook={{
+          id: book.id,
+          title: book.title,
+          project_id: book.project_id,
+          source_document_ids: book.source_document_ids,
+        }}
       />
 
       <ConfirmDialog
@@ -466,6 +538,7 @@ function SettingsTab({
 }) {
   const uid = useId();
   const locked = book.has_sessions;
+  const canManage = book.can_manage;
   const [title, setTitle] = useState(book.title);
   const [description, setDescription] = useState(book.description ?? "");
   const [passingScore, setPassingScore] = useState(book.passing_score);
@@ -476,9 +549,33 @@ function SettingsTab({
   const [shuffleOptions, setShuffleOptions] = useState(book.shuffle_options);
   const [allowRetake, setAllowRetake] = useState(book.allow_retake);
   const [revealAnswers, setRevealAnswers] = useState(book.reveal_answers);
+  const [dueAt, setDueAt] = useState(toDatetimeLocalInput(book.due_at));
+  const [assignees, setAssignees] = useState<SelectedAssignee[]>(
+    book.assignees.map((a) => ({ user_id: a.user_id, name: a.user_name, email: a.user_email ?? "" })),
+  );
+  const assigneeIds = assignees.map((a) => a.user_id);
+  const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [memberQuery, setMemberQuery] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { projects } = useQuizProject();
+  const isPublicProject =
+    projects.find((p) => p.id === book.project_id)?.visibility === "public";
+
+  useEffect(() => {
+    let cancelled = false;
+    listProjectMembers(String(book.project_id))
+      .then((list) => {
+        if (!cancelled) setMembers(list.filter((m) => m.status === "active"));
+      })
+      .catch(() => {
+        if (!cancelled) setMembers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [book.project_id]);
 
   async function handleSave() {
     setSaving(true);
@@ -494,6 +591,8 @@ function SettingsTab({
         shuffle_options: shuffleOptions,
         allow_retake: allowRetake,
         reveal_answers: revealAnswers,
+        due_at: fromDatetimeLocalInput(dueAt),
+        assignee_user_ids: assigneeIds,
       });
       setSaved(true);
       await onSaved();
@@ -511,6 +610,7 @@ function SettingsTab({
   return (
     <Card className="flex flex-col gap-5 p-5">
       {error && <ErrorBanner message={error} />}
+      {!canManage && !locked && <ManageOnlyNotice />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="문제집 이름" htmlFor={`${uid}-title`}>
@@ -518,7 +618,7 @@ function SettingsTab({
             id={`${uid}-title`}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            disabled={locked}
+            disabled={locked || !canManage}
           />
         </Field>
         <Field label="문제 수" htmlFor={`${uid}-count`}>
@@ -532,7 +632,7 @@ function SettingsTab({
           rows={2}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          disabled={locked}
+          disabled={locked || !canManage}
         />
       </Field>
 
@@ -545,7 +645,7 @@ function SettingsTab({
             max={100}
             value={passingScore}
             onChange={(e) => setPassingScore(Number(e.target.value))}
-            disabled={locked}
+            disabled={locked || !canManage}
           />
         </Field>
         <Field label="제한 시간(분)" htmlFor={`${uid}-time`}>
@@ -556,7 +656,7 @@ function SettingsTab({
             value={timeLimit}
             onChange={(e) => setTimeLimit(e.target.value)}
             placeholder="비우면 제한 없음"
-            disabled={locked}
+            disabled={locked || !canManage}
           />
         </Field>
       </div>
@@ -566,31 +666,78 @@ function SettingsTab({
           label="문제 순서 랜덤"
           checked={shuffleQuestions}
           onChange={setShuffleQuestions}
-          disabled={locked}
+          disabled={locked || !canManage}
         />
         <QuizToggleField
           label="보기 순서 랜덤"
           checked={shuffleOptions}
           onChange={setShuffleOptions}
-          disabled={locked}
+          disabled={locked || !canManage}
         />
         <QuizToggleField
           label="재응시 가능"
           checked={allowRetake}
           onChange={setAllowRetake}
-          disabled={locked}
+          disabled={locked || !canManage}
         />
         <QuizToggleField
           label="제출 후 정답 공개"
           checked={revealAnswers}
           onChange={setRevealAnswers}
-          disabled={locked}
+          disabled={locked || !canManage}
         />
+      </div>
+
+      <div className="flex flex-col gap-3 border-t border-border pt-5">
+        <Field label="마감기한" htmlFor={`${uid}-due`}>
+          <DateTimePicker
+            id={`${uid}-due`}
+            value={dueAt}
+            onChange={setDueAt}
+            disabled={locked || !canManage}
+          />
+        </Field>
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-ink">
+            응시자 지정
+            {assigneeIds.length > 0 && (
+              <span className="ml-1.5 font-normal text-ink-muted">{assigneeIds.length}명</span>
+            )}
+          </p>
+          {isPublicProject ? (
+            <AssigneeSearchPicker
+              selected={assignees}
+              onAdd={(user) => setAssignees((prev) => [...prev, user])}
+              onRemove={(userId) =>
+                setAssignees((prev) => prev.filter((a) => a.user_id !== userId))
+              }
+              disabled={locked || !canManage}
+            />
+          ) : (
+            <AssigneePicker
+              members={members}
+              selectedUserIds={assigneeIds}
+              onToggle={(member) =>
+                setAssignees((prev) =>
+                  prev.some((a) => a.user_id === member.user_id)
+                    ? prev.filter((a) => a.user_id !== member.user_id)
+                    : [...prev, { user_id: member.user_id, name: member.name, email: member.email }],
+                )
+              }
+              disabled={locked || !canManage}
+              query={memberQuery}
+              onQueryChange={setMemberQuery}
+            />
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
         {saved && <span className="text-xs text-ink-muted">저장됐습니다.</span>}
-        <Button onClick={() => void handleSave()} disabled={locked || saving || !title.trim()}>
+        <Button
+          onClick={() => void handleSave()}
+          disabled={locked || !canManage || saving || !title.trim()}
+        >
           {saving ? "저장 중…" : "저장"}
         </Button>
       </div>
@@ -650,15 +797,26 @@ function ResultsTab({ book, currentUserId }: { book: QuizBook; currentUserId: nu
       <Card className="overflow-hidden">
         <CardHeader>
           <CardTitle>응시 이력</CardTitle>
-          <span className="text-xs text-ink-muted">전체 응시자</span>
+          <span className="text-xs text-ink-muted">
+            {book.can_manage ? "전체 응시자" : "내 응시 이력"}
+          </span>
         </CardHeader>
         <div className="flex flex-col divide-y divide-border">
           {sessions.map((s) => {
             const mine = currentUserId != null && s.user_id === currentUserId;
             const passed = (s.score ?? 0) >= book.passing_score;
+            const canOpen = s.status === "SUBMITTED" && (book.can_manage || mine);
             const body = (
               <>
                 <span className="flex min-w-0 items-center gap-2">
+                  {book.can_manage && (
+                    <span
+                      className="max-w-[10rem] shrink-0 truncate text-sm font-medium text-ink"
+                      title={s.user_email ?? undefined}
+                    >
+                      {s.user_name ?? s.user_email ?? `사용자 #${s.user_id}`}
+                    </span>
+                  )}
                   <span className="text-ink-muted">{formatDateTime(s.created_at)}</span>
                   {mine && (
                     <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-muted">
@@ -688,7 +846,7 @@ function ResultsTab({ book, currentUserId }: { book: QuizBook; currentUserId: nu
               </>
             );
 
-            return mine && s.status === "SUBMITTED" ? (
+            return canOpen ? (
               <Link
                 key={s.id}
                 href={`/quiz/${book.id}/result?session=${s.id}`}
