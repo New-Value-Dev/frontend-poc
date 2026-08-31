@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import "@toast-ui/editor/dist/toastui-editor.css";
 import type EditorType from "@toast-ui/editor";
 
@@ -33,22 +33,42 @@ export const TextEditor = forwardRef<
     height?: string;
   }
 >(function TextEditor({ initialValue = "", placeholder, height = "420px" }, ref) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const elRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorType | null>(null);
+  const [isEmpty, setIsEmpty] = useState(!initialValue.trim());
+  const [overlayPos, setOverlayPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     let disposed = false;
 
+    function measureOverlay() {
+      const wrap = wrapRef.current;
+      const candidates = elRef.current?.querySelectorAll<HTMLElement>(".ProseMirror") ?? [];
+      const content = Array.from(candidates).find((el) => el.offsetParent !== null);
+      if (!wrap || !content) return;
+      const wrapRect = wrap.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+      const style = getComputedStyle(content);
+      setOverlayPos({
+        top: contentRect.top - wrapRect.top + parseFloat(style.paddingTop || "0"),
+        left: contentRect.left - wrapRect.left + parseFloat(style.paddingLeft || "0"),
+      });
+    }
+
     import("@toast-ui/editor").then(({ default: Editor }) => {
       if (disposed || !elRef.current) return;
-      editorRef.current = new Editor({
+      const editor = new Editor({
         el: elRef.current,
         height,
         initialEditType: "markdown",
         previewStyle: "tab",
-        placeholder,
         initialValue,
       });
+      editor.on("change", () => setIsEmpty(!editor.getMarkdown().trim()));
+      editor.on("changeMode", () => requestAnimationFrame(measureOverlay));
+      editorRef.current = editor;
+      requestAnimationFrame(measureOverlay);
     });
 
     return () => {
@@ -73,8 +93,22 @@ export const TextEditor = forwardRef<
     },
     setMarkdown: (markdown: string) => {
       editorRef.current?.setMarkdown(markdown);
+      setIsEmpty(!markdown.trim());
     },
   }));
 
-  return <div ref={elRef} />;
+  return (
+    <div ref={wrapRef} className="group relative">
+      <div ref={elRef} />
+      {placeholder && isEmpty && overlayPos && (
+        <div
+          className="pointer-events-none absolute text-[13px] text-ink-muted group-has-[.toastui-editor-md-preview.active]:hidden"
+          style={{ top: overlayPos.top, left: overlayPos.left }}
+          aria-hidden
+        >
+          {placeholder}
+        </div>
+      )}
+    </div>
+  );
 });
