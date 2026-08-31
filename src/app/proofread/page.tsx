@@ -11,6 +11,7 @@ import {
   PageHeader,
   ProofreadCategoryBadge,
 } from "@/components/ui/primitives";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { TextEditor, type TextEditorHandle } from "@/components/proofread/TextEditor";
 import { SaveAsDocumentDialog } from "@/components/proofread/SaveAsDocumentDialog";
 import { startTextProofread, getTextProofreadJob, listTextProofreadJobs } from "@/lib/ai";
@@ -65,6 +66,7 @@ function saveDismissedJobId(id: number | null) {
 }
 
 export default function ProofreadTextPage() {
+  const { loading: authLoading } = useAuth();
   const editorRef = useRef<TextEditorHandle>(null);
   const [draftMarkdown] = useState(loadDraft);
   const [checking, setChecking] = useState(false);
@@ -137,6 +139,7 @@ export default function ProofreadTextPage() {
 
   // 마운트 시 내 최근 job을 조회해 이어받는다
   useEffect(() => {
+    if (authLoading) return;
     let cancelled = false;
     listTextProofreadJobs()
       .then(async (list) => {
@@ -171,7 +174,7 @@ export default function ProofreadTextPage() {
       cancelled = true;
       stopPolling();
     };
-  }, []);
+  }, [authLoading]);
 
   async function handleCheck() {
     const markdown = editorRef.current?.getText() ?? "";
