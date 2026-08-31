@@ -31,13 +31,18 @@ export const TextEditor = forwardRef<
     initialValue?: string;
     placeholder?: string;
     height?: string;
+    onChange?: (markdown: string) => void;
   }
->(function TextEditor({ initialValue = "", placeholder, height = "420px" }, ref) {
+>(function TextEditor({ initialValue = "", placeholder, height = "420px", onChange }, ref) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const elRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorType | null>(null);
   const [isEmpty, setIsEmpty] = useState(!initialValue.trim());
   const [overlayPos, setOverlayPos] = useState<{ top: number; left: number } | null>(null);
+  // 에디터는 마운트 시 한 번만 만들어지므로, 매 렌더마다 바뀌는 onChange는
+  // ref로 최신값을 잡아 change 리스너 안에서 참조한다.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     let disposed = false;
@@ -65,7 +70,11 @@ export const TextEditor = forwardRef<
         previewStyle: "tab",
         initialValue,
       });
-      editor.on("change", () => setIsEmpty(!editor.getMarkdown().trim()));
+      editor.on("change", () => {
+        const markdown = editor.getMarkdown();
+        setIsEmpty(!markdown.trim());
+        onChangeRef.current?.(markdown);
+      });
       editor.on("changeMode", () => requestAnimationFrame(measureOverlay));
       editorRef.current = editor;
       requestAnimationFrame(measureOverlay);

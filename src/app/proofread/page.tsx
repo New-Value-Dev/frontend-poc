@@ -82,8 +82,25 @@ export default function ProofreadTextPage() {
   const restoreSuppressedRef = useRef(false);
   // 검사를 걸었던 시점의 마크다운 — "새 문서로 저장" 시 V1(원본)으로 남겨 교정 전후를 구분한다.
   const originalMarkdownRef = useRef(draftMarkdown);
+  // 타이핑 중 draft 자동저장을 지연시키는 타이머. 검사/적용/초기화/저장처럼 draft를
+  // 명시적으로 다시 쓰는 지점에서는 오래된 값으로 덮어쓰지 않도록 먼저 취소한다.
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const acceptedCount = findings.filter((f) => f.status === "accepted").length;
+
+  function cancelDraftAutosave() {
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current);
+      draftSaveTimerRef.current = null;
+    }
+  }
+
+  function handleEditorChange(markdown: string) {
+    cancelDraftAutosave();
+    draftSaveTimerRef.current = setTimeout(() => saveDraft(markdown), 600);
+  }
+
+  useEffect(() => cancelDraftAutosave, []);
 
   function stopPolling() {
     if (pollRef.current) pollRef.current.cancelled = true;
@@ -165,6 +182,7 @@ export default function ProofreadTextPage() {
     setCheckError(null);
     setSaved(null);
     const currentMarkdown = editorRef.current?.getMarkdown() ?? "";
+    cancelDraftAutosave();
     saveDraft(currentMarkdown);
     originalMarkdownRef.current = currentMarkdown;
     restoreSuppressedRef.current = false;
@@ -197,6 +215,7 @@ export default function ProofreadTextPage() {
       if (f.status === "accepted") next = next.split(f.original).join(f.suggestion);
     }
     current.setMarkdown(next);
+    cancelDraftAutosave();
     saveDraft(next);
   }
 
@@ -209,6 +228,7 @@ export default function ProofreadTextPage() {
   function resetAll() {
     stopPolling();
     editorRef.current?.setMarkdown("");
+    cancelDraftAutosave();
     saveDraft("");
     originalMarkdownRef.current = "";
     restoreSuppressedRef.current = true;
@@ -247,6 +267,7 @@ export default function ProofreadTextPage() {
             initialValue={draftMarkdown}
             placeholder="검사할 텍스트를 입력하거나 붙여넣으세요."
             height="360px"
+            onChange={handleEditorChange}
           />
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-ink-muted">
@@ -387,7 +408,12 @@ export default function ProofreadTextPage() {
         onSaved={(doc) => {
           setSaved(doc);
           setSaveOpen(false);
+          cancelDraftAutosave();
           saveDraft("");
+          if (currentJobIdRef.current != null) {
+            saveDismissedJobId(currentJobIdRef.current);
+            currentJobIdRef.current = null;
+          }
         }}
       />
     </div>
