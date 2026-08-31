@@ -110,7 +110,7 @@ export function DashboardView() {
     { label: "프로젝트", value: stats?.projects ?? 0 },
     { label: "문서", value: stats?.documents ?? 0 },
     { label: "처리 중", value: processing },
-    { label: "오늘 RAG 질의", value: stats?.ragToday ?? 0, note: "RAG 미구현" },
+    { label: "오늘 RAG 질의", value: stats?.ragToday ?? 0 },
   ];
 
   return (

@@ -19,7 +19,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const tabs = [
   { key: "proofread", label: "오타 검증" },
   { key: "compare", label: "문서 비교" },
-  { key: "related", label: "관련 문서" },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
@@ -74,7 +73,6 @@ export function AiPanel({
           />
         )}
         {active === "compare" && <ComparePanel docId={docId} />}
-        {active === "related" && <Placeholder title="관련 문서" desc="문서 임베딩 기반 유사도로 연관 문서를 추천합니다. (준비 중)" />}
       </div>
     </div>
   );
