@@ -14,6 +14,7 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { TextEditor, type TextEditorHandle } from "@/components/proofread/TextEditor";
 import { SaveAsDocumentDialog } from "@/components/proofread/SaveAsDocumentDialog";
+import { TextDiffModal } from "@/components/proofread/TextDiffModal";
 import { startTextProofread, getTextProofreadJob, listTextProofreadJobs } from "@/lib/ai";
 import { errorMessage } from "@/lib/api";
 import type { Document, FindingStatus, TextProofreadFinding } from "@/lib/types";
@@ -77,6 +78,9 @@ export default function ProofreadTextPage() {
   const [saveMarkdown, setSaveMarkdown] = useState("");
   const [saveOriginalMarkdown, setSaveOriginalMarkdown] = useState("");
   const [saved, setSaved] = useState<Document | null>(null);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffOriginal, setDiffOriginal] = useState("");
+  const [diffCorrected, setDiffCorrected] = useState("");
   // 진행 중인 폴링 루프를 취소하기 위한 토큰. AiPanel의 오탈자 검증 폴링과 같은 패턴.
   const pollRef = useRef<{ cancelled: boolean } | null>(null);
   // 마운트 시 이어받았거나 방금 시작한 job의 id. 초기화 시 이 id를 "무시할 job"으로 기록한다.
@@ -210,13 +214,20 @@ export default function ProofreadTextPage() {
     setFindings((prev) => prev.map((f) => ({ ...f, status })));
   }
 
-  function applyAccepted() {
+  function buildAcceptedPreview(): string {
     const current = editorRef.current;
-    if (!current) return;
+    if (!current) return "";
     let next = current.getMarkdown();
     for (const f of findings) {
       if (f.status === "accepted") next = next.split(f.original).join(f.suggestion);
     }
+    return next;
+  }
+
+  function applyAccepted() {
+    const current = editorRef.current;
+    if (!current) return;
+    const next = buildAcceptedPreview();
     current.setMarkdown(next);
     cancelDraftAutosave();
     saveDraft(next);
@@ -226,6 +237,12 @@ export default function ProofreadTextPage() {
     setSaveMarkdown(editorRef.current?.getMarkdown() ?? "");
     setSaveOriginalMarkdown(originalMarkdownRef.current);
     setSaveOpen(true);
+  }
+
+  function openDiff() {
+    setDiffOriginal(originalMarkdownRef.current);
+    setDiffCorrected(buildAcceptedPreview());
+    setDiffOpen(true);
   }
 
   function resetAll() {
@@ -338,9 +355,14 @@ export default function ProofreadTextPage() {
               </p>
               <div className="flex items-center gap-2">
                 {acceptedCount > 0 && (
-                  <Button variant="outline" onClick={applyAccepted}>
-                    승인한 교정 {acceptedCount}건 적용
-                  </Button>
+                  <>
+                    <Button variant="outline" onClick={applyAccepted}>
+                      승인한 교정 {acceptedCount}건 적용
+                    </Button>
+                    <Button variant="outline" onClick={openDiff}>
+                      원본과 비교
+                    </Button>
+                  </>
                 )}
                 <Button onClick={openSaveDialog}>새 문서로 저장</Button>
               </div>
@@ -402,6 +424,13 @@ export default function ProofreadTextPage() {
           </div>
         </Card>
       )}
+
+      <TextDiffModal
+        open={diffOpen}
+        onClose={() => setDiffOpen(false)}
+        original={diffOriginal}
+        corrected={diffCorrected}
+      />
 
       <SaveAsDocumentDialog
         open={saveOpen}

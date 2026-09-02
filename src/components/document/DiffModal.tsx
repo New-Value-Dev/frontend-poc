@@ -105,48 +105,26 @@ function SectionRow({
   );
 }
 
-export function DiffModal({
-  open,
-  onClose,
-  docId,
-  fromVersionId,
-  toVersionId,
+export function DiffView({
+  result,
+  fromLabel,
+  toLabel,
 }: {
-  open: boolean;
-  onClose: () => void;
-  docId: string;
-  fromVersionId: number;
-  toVersionId: number;
+  result: DiffResult;
+  fromLabel?: string;
+  toLabel?: string;
 }) {
-  const [result, setResult] = useState<DiffResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [activeOps, setActiveOps] = useState<Set<ChangeOp>>(new Set(["added", "deleted", "modified"]));
   const [focusPos, setFocusPos] = useState(-1); // changeIndices 안에서의 위치
   const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const changeRefs = useRef<Record<number, HTMLElement | null>>({});
 
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setResult(null);
+  const [prevResult, setPrevResult] = useState(result);
+  if (prevResult !== result) {
+    setPrevResult(result);
+    setActiveOps(new Set(["added", "deleted", "modified"]));
     setFocusPos(-1);
-    getDocumentDiff(docId, fromVersionId, toVersionId)
-      .then((r) => {
-        if (!cancelled) setResult(r);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(errorMessage(e, "버전 비교에 실패했습니다."));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, docId, fromVersionId, toVersionId]);
+  }
 
   const changeIndices = useMemo(() => {
     if (!result) return [];
@@ -176,6 +154,127 @@ export function DiffModal({
   }
 
   const focusedSectionIndex = focusPos === -1 ? -1 : changeIndices[focusPos];
+  const resolvedFromLabel = fromLabel ?? `이전 · V${result.from_version.version_no}`;
+  const resolvedToLabel = toLabel ?? `이후 · V${result.to_version.version_no}`;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        {(Object.keys(CHANGE_CHIPS) as ChangeOp[]).map((op) => {
+          const on = activeOps.has(op);
+          return (
+            <button
+              key={op}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggleOp(op)}
+              className={`rounded-full px-2.5 py-0.5 font-medium transition-colors ${FOCUS_RING} ${
+                on ? CHANGE_CHIPS[op].active : CHANGE_CHIPS[op].inactive
+              }`}
+            >
+              {CHANGE_CHIPS[op].label} {result.summary[op]}
+            </button>
+          );
+        })}
+        <span className="rounded-full bg-surface-2 px-2.5 py-0.5 font-medium text-ink-muted">
+          변경 없음 {result.summary.unchanged}
+        </span>
+
+        <div className="ml-auto flex items-center gap-1">
+          <span className="mr-1 text-ink-muted">
+            {changeIndices.length === 0 ? "0 / 0" : `${focusPos + 1} / ${changeIndices.length}`}
+          </span>
+          <button
+            type="button"
+            onClick={() => goTo(-1)}
+            disabled={changeIndices.length === 0}
+            aria-label="이전 변경으로 이동"
+            className={`rounded-control border border-border px-2 py-1 text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_RING}`}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={() => goTo(1)}
+            disabled={changeIndices.length === 0}
+            aria-label="다음 변경으로 이동"
+            className={`rounded-control border border-border px-2 py-1 text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_RING}`}
+          >
+            ↓
+          </button>
+        </div>
+      </div>
+
+      <div className="max-h-[65vh] overflow-y-auto rounded-control border border-border">
+        <div className="sticky top-0 z-20 grid grid-cols-2 border-b border-border text-xs font-semibold text-ink-muted">
+          <div className="flex items-center gap-1.5 border-r border-border bg-surface-2 px-3 py-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary/60" aria-hidden />
+            {resolvedFromLabel}
+          </div>
+          <div className="flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/70" aria-hidden />
+            {resolvedToLabel}
+          </div>
+        </div>
+        {result.sections.length === 0 ? (
+          <p className="py-8 text-center text-sm text-ink-muted">비교할 섹션이 없습니다.</p>
+        ) : (
+          result.sections.map((s, i) => (
+            <SectionRow
+              key={`${s.from_section_id}-${s.to_section_id}-${i}`}
+              section={s}
+              focused={i === focusedSectionIndex}
+              registerRef={(el) => {
+                sectionRefs.current[i] = el;
+              }}
+              registerChangeRef={(el) => {
+                changeRefs.current[i] = el;
+              }}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function DiffModal({
+  open,
+  onClose,
+  docId,
+  fromVersionId,
+  toVersionId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  docId: string;
+  fromVersionId: number;
+  toVersionId: number;
+}) {
+  const [result, setResult] = useState<DiffResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    getDocumentDiff(docId, fromVersionId, toVersionId)
+      .then((r) => {
+        if (!cancelled) setResult(r);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e, "버전 비교에 실패했습니다."));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, docId, fromVersionId, toVersionId]);
 
   return (
     <Modal
@@ -191,85 +290,7 @@ export function DiffModal({
         </div>
       )}
       {!loading && error && <p className="py-8 text-center text-sm text-primary">{error}</p>}
-      {!loading && !error && result && (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            {(Object.keys(CHANGE_CHIPS) as ChangeOp[]).map((op) => {
-              const on = activeOps.has(op);
-              return (
-                <button
-                  key={op}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => toggleOp(op)}
-                  className={`rounded-full px-2.5 py-0.5 font-medium transition-colors ${FOCUS_RING} ${
-                    on ? CHANGE_CHIPS[op].active : CHANGE_CHIPS[op].inactive
-                  }`}
-                >
-                  {CHANGE_CHIPS[op].label} {result.summary[op]}
-                </button>
-              );
-            })}
-            <span className="rounded-full bg-surface-2 px-2.5 py-0.5 font-medium text-ink-muted">
-              변경 없음 {result.summary.unchanged}
-            </span>
-
-            <div className="ml-auto flex items-center gap-1">
-              <span className="mr-1 text-ink-muted">
-                {changeIndices.length === 0 ? "0 / 0" : `${focusPos + 1} / ${changeIndices.length}`}
-              </span>
-              <button
-                type="button"
-                onClick={() => goTo(-1)}
-                disabled={changeIndices.length === 0}
-                aria-label="이전 변경으로 이동"
-                className={`rounded-control border border-border px-2 py-1 text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_RING}`}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                onClick={() => goTo(1)}
-                disabled={changeIndices.length === 0}
-                aria-label="다음 변경으로 이동"
-                className={`rounded-control border border-border px-2 py-1 text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_RING}`}
-              >
-                ↓
-              </button>
-            </div>
-          </div>
-
-          <div className="max-h-[65vh] overflow-y-auto rounded-control border border-border">
-            <div className="sticky top-0 z-20 grid grid-cols-2 border-b border-border text-xs font-semibold text-ink-muted">
-              <div className="flex items-center gap-1.5 border-r border-border bg-surface-2 px-3 py-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary/60" aria-hidden />
-                이전 · V{result.from_version.version_no}
-              </div>
-              <div className="flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/70" aria-hidden />
-                이후 · V{result.to_version.version_no}
-              </div>
-            </div>
-            {result.sections.length === 0 ? (
-              <p className="py-8 text-center text-sm text-ink-muted">비교할 섹션이 없습니다.</p>
-            ) : (
-              result.sections.map((s, i) => (
-                <SectionRow
-                  key={`${s.from_section_id}-${s.to_section_id}-${i}`}
-                  section={s}
-                  focused={i === focusedSectionIndex}
-                  registerRef={(el) => {
-                    sectionRefs.current[i] = el;
-                  }}
-                  registerChangeRef={(el) => {
-                    changeRefs.current[i] = el;
-                  }}
-                />
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {!loading && !error && result && <DiffView result={result} />}
     </Modal>
   );
 }
